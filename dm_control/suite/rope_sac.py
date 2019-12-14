@@ -151,20 +151,25 @@ class Rope(base.Task):
       #corner_geom = index
 
       corner_action = index
-      corner_geom = index + 5
+      corner_geom = index + 4
+      weld_body = physics.model.eq_obj2id[0]
+      weld_geom = weld_body + 4
 
-      position = goal_position + physics.named.data.geom_xpos[corner_geom,:2]
-      dist = position - physics.named.data.geom_xpos[corner_geom,:2]
+      dist = goal_position
+      print(dist)
+      goal_position = dist + physics.named.data.geom_xpos[weld_geom, :2]
+
 
       loop = 0
       while np.linalg.norm(dist) > 0.025:
         loop += 1
         if loop > 40:
           break
-        physics.named.data.xfrc_applied[corner_action, :2] = dist * 20
+        # physics.named.data.xfrc_applied[corner_action, :2] = dist * 20
+        physics.data.mocap_pos[0, :2] = goal_position # physics.named.data.xpos[weld_body, :2] + dist
         physics.step()
         self.after_step(physics)
-        dist = position - physics.named.data.geom_xpos[corner_geom,:2]
+        dist = goal_position - physics.named.data.geom_xpos[weld_geom, :2]
   #  else:
   #      if np.all(action != 0):
   #          print('failed', location, action, cam_pos_xy)
