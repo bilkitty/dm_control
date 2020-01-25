@@ -221,7 +221,7 @@ class Cloth(base.Task):
     current_mask = np.any(self.image < 100, axis=-1).astype(int)
     reward = np.sum(current_mask) / np.sum(self.mask)
 
-    if self._hit_cloth and self._train_mode:
+    if self._hit_cloth and self._train_mode and not self._random_location:
         reward += 1
 
     return reward
