@@ -71,7 +71,7 @@ class Cloth(base.Task):
   """A point_mass `Task` to reach target with smooth reward."""
 
   def __init__(self, randomize_gains, random=None, random_location=True, pixels_only=False,
-               maxq=False):
+               maxq=False, train_mode=False):
     """Initialize an instance of `PointMass`.
 
     Args:
@@ -83,6 +83,8 @@ class Cloth(base.Task):
     self._randomize_gains = randomize_gains
     self._random_location = random_location
     self._maxq = maxq
+    self._train_mode = train_mode
+    self._hit_cloth = False
 
     super(Cloth, self).__init__(random=random)
 
@@ -161,6 +163,7 @@ class Cloth(base.Task):
       # Move the selected joint to the correct goal position
 
       if possible_index != []:
+          self._hit_cloth = True
           index = possible_index[possible_z.index(max(possible_z))]
 
           corner_action = index - 4
@@ -217,6 +220,9 @@ class Cloth(base.Task):
     # Reward computed as intersection of current binary image with goal binary image
     current_mask = np.any(self.image < 100, axis=-1).astype(int)
     reward = np.sum(current_mask) / np.sum(self.mask)
+
+    if self._hit_cloth and self._train_mode:
+        reward += 1
 
     return reward
 
