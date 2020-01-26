@@ -123,7 +123,7 @@ class Cloth(base.Task):
       """Sets the control signal for the actuators to values in `action`."""
       physics.named.data.xfrc_applied[:,:3]=np.zeros((3,))
 
-      if self._maxq:
+      if self._maxq or not self._random_location:
           location = (action[:2] * 0.5 + 0.5) * 63
           location = np.round(location).astype('int32')
           goal_position = action[2:]
@@ -183,6 +183,8 @@ class Cloth(base.Task):
             physics.step()
             self.after_step(physics)
             dist = position - physics.named.data.geom_xpos[corner_geom]
+      else:
+          self._hit_cloth = False
 
 
   def get_observation(self, physics):

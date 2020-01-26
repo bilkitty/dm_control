@@ -150,8 +150,7 @@ class Rope(base.Task):
       loop = 0
       while np.linalg.norm(dist) > 0.025:
         loop += 1
-        if loop > 10000:
-          print(np.linalg.norm(dist), 'break')
+        if loop > 40:
           break
         physics.named.data.xfrc_applied[corner_action, :2] = dist * 20
         physics.step()
