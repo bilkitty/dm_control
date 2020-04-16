@@ -228,3 +228,8 @@ class Balance(base.Task):
   def get_reward(self, physics):
     """Returns a sparse or a smooth reward, as specified in the constructor."""
     return self._get_reward(physics, sparse=self._sparse)
+
+  def get_geoms(self, physics):
+    geoms = np.array([physics.named.data.geom_xpos['cart'], physics.named.data.geom_xpos['pole_1']], dtype=np.float32)
+    return geoms
+  
