@@ -75,7 +75,7 @@ class Physics(mujoco.Physics):
 class Cloth(base.Task):
     """A Stack `Task`: stack the boxes."""
 
-    def __init__(self, randomize_gains, random=None, random_pick=True, init_flat=False, use_dr=False, texture_randomization=True):
+    def __init__(self, randomize_gains, random=None, random_pick=True, init_flat=False, use_dr=False, texture_randomization=True, max_snap_dist=None):
         """Initialize an instance of `PointMass`.
 
         Args:

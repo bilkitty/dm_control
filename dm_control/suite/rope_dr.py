@@ -72,7 +72,7 @@ class Rope(base.Task):
     """A point_mass `Task` to reach target with smooth reward."""
 
     def __init__(self, randomize_gains, random=None, random_pick=False, init_flat=False,
-                 use_dr=False):
+                 use_dr=False, max_snap_dist=None):
         """Initialize an instance of `PointMass`.
 
         Args:
@@ -86,6 +86,10 @@ class Rope(base.Task):
         self._random_pick = random_pick
         self._n_geoms = 25
         self._use_dr = use_dr
+        self._max_snap_dist = max_snap_dist
+        if self._max_snap_dist is None:
+            self._max_snap_dist = float('inf')
+        print('max snap dist', self._max_snap_dist)
         super(Rope, self).__init__(random=random)
 
     def action_spec(self, physics):
@@ -206,23 +210,27 @@ class Rope(base.Task):
 
         dists = np.linalg.norm(cam_pos_xy - location[None, :], axis=1)
         index = np.argmin(dists)
+        min_geom_dist = np.min(dists)
 
-        if True:
-            corner_action = 'B{}'.format(index)
-            corner_geom = 'G{}'.format(index)
+        # No action if the nearest geom from the pick point is too far (> self._max_snap_dist)
+        if min_geom_dist > self._max_snap_dist:
+            return
 
-            position = goal_position + physics.named.data.geom_xpos[corner_geom, :2]
+        corner_action = 'B{}'.format(index)
+        corner_geom = 'G{}'.format(index)
+
+        position = goal_position + physics.named.data.geom_xpos[corner_geom, :2]
+        dist = position - physics.named.data.geom_xpos[corner_geom, :2]
+
+        loop = 0
+        while np.linalg.norm(dist) > 0.025:
+            loop += 1
+            if loop > 40:
+                break
+            physics.named.data.xfrc_applied[corner_action, :2] = dist * 30
+            physics.step()
+            self.after_step(physics)
             dist = position - physics.named.data.geom_xpos[corner_geom, :2]
-
-            loop = 0
-            while np.linalg.norm(dist) > 0.025:
-                loop += 1
-                if loop > 40:
-                    break
-                physics.named.data.xfrc_applied[corner_action, :2] = dist * 30
-                physics.step()
-                self.after_step(physics)
-                dist = position - physics.named.data.geom_xpos[corner_geom, :2]
 
     def get_termination(self, physics):
         if self.num_loc < 1:
