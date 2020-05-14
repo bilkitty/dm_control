@@ -89,6 +89,9 @@ class Cloth(base.Task):
         self._init_flat = init_flat
         self._use_dr = use_dr
         self._texture_randomization = texture_randomization
+        self._max_snap_dist = max_snap_dist
+        if self._max_snap_dist is None:
+            self._max_snap_dist = float('inf')
 
         super(Cloth, self).__init__(random=random)
 
@@ -240,6 +243,15 @@ class Cloth(base.Task):
         cam_pos_xy = np.rint(cam_pos_all[:, :2].reshape((81, 2)) / cam_pos_all[:, 2])
         cam_pos_xy = cam_pos_xy.astype(int)
         cam_pos_xy[:, 1] = W - cam_pos_xy[:, 1]
+        cam_pos_xy[:, [0, 1]] = cam_pos_xy[:, [1, 0]]
+
+        dists = np.linalg.norm(cam_pos_xy - location[None, :], axis=1)
+        index = np.argmin(dists)
+        location = cam_pos_xy[index]
+        min_geom_dist = np.min(dists)
+
+        if min_geom_dist > self._max_snap_dist:
+            return
 
         # hyperparameter epsilon=3(selecting 3 nearest joint) and select the point
         epsilon = 3
@@ -247,10 +259,10 @@ class Cloth(base.Task):
         possible_z = []
         for i in range(81):
             # flipping the x and y to make sure it corresponds to the real location
-            if abs(cam_pos_xy[i][0] - location[1]) < epsilon and abs(
-                    cam_pos_xy[i][1] - location[0]) < epsilon:
+            if abs(cam_pos_xy[i][0] - location[0]) < epsilon and abs(
+                    cam_pos_xy[i][1] - location[1]) < epsilon:
                 possible_index.append(i)
-                possible_z.append(physics.data.geom_xpos[i, 2])
+                possible_z.append(physics.data.geom_xpos[i+5, 2])
 
         if possible_index != []:
             index = possible_index[possible_z.index(max(possible_z))]
