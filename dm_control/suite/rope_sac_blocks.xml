@@ -66,6 +66,19 @@
 
 <!--            </body>-->
     </body>
+    <body name="obs1">
+            <geom conaffinity="1" contype="1" pos=".1 .1 0.015" size="0.03 0.03 0.03" rgba="1.0  0.0 0.0 1" type="box" />
+        </body>
+    <body name="obs2">
+            <geom conaffinity="1" contype="1" pos="-.1 .1 0.015" size="0.03 0.03 0.03" rgba="1.0  0.0 0.0 1" type="box" />
+        </body>
+    <body name="obs3">
+            <geom conaffinity="1" contype="1" pos=".1 -.1 0.015" size="0.03 0.03 0.03" rgba="1.0  0.0 0.0 1" type="box" />
+        </body>
+    <body name="obs4">
+            <geom conaffinity="1" contype="1" pos="-.1 -.1 0.015." size="0.03 0.03 0.03" rgba="1.0  0.0 0.0 1" type="box" />
+        </body>
+
 <!--    <body name="torso" pos="0 0 0">-->
 <!--      <geom density="1000" fromto="1.5 0 0 0.5 0 0" size="0.1" type="capsule"/>-->
 <!--      <joint axis="1 0 0" name="slider1" pos="0 0 0" type="slide"/>-->

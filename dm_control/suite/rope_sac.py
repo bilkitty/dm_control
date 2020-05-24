@@ -28,6 +28,7 @@ from dm_control.suite import common
 from dm_control.utils import containers
 import numpy as np
 import random
+import mujoco_py
 import os
 import math
 _DEFAULT_TIME_LIMIT = 20
@@ -36,12 +37,11 @@ SUITE = containers.TaggedTasks()
 CORNER_INDEX_ACTION=['B3','B8','B10','B20']
 GEOM_INDEX=['G0_0','G0_8','G8_0','G8_8']
 
-def get_model_and_assets():
+def get_model_and_assets(name):
   """Returns a tuple containing the model XML string and a dict of assets."""
   # return common.read_model('cloth_v0.xml'), common.ASSETS
-  return common.read_model('rope_sac.xml'),common.ASSETS
+  return common.read_model(name),common.ASSETS
 W=64
-counter = 0
 
 
 
@@ -50,7 +50,18 @@ counter = 0
 def easy(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None, **kwargs):
   """Returns the easy cloth task."""
 
-  physics = Physics.from_xml_string(*get_model_and_assets())
+  physics = Physics.from_xml_string(*get_model_and_assets('rope_sac.xml'))
+  task = Rope(randomize_gains=False, random=random, **kwargs)
+  environment_kwargs = environment_kwargs or {}
+  return control.Environment(
+      physics, task, time_limit=time_limit,n_frame_skip=1, rope_task=True,**environment_kwargs)
+
+
+@SUITE.add('benchmarking', 'hard')
+def easy(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None, **kwargs):
+  """Returns the hard cloth task."""
+
+  physics = Physics.from_xml_string(*get_model_and_assets('rope_sac_blocks.xml'))
   task = Rope(randomize_gains=False, random=random, **kwargs)
   environment_kwargs = environment_kwargs or {}
   return control.Environment(
@@ -64,9 +75,9 @@ class Physics(mujoco.Physics):
 class Rope(base.Task):
   """A point_mass `Task` to reach target with smooth reward."""
 
-  def __init__(self, randomize_gains, random=None, maxq=False):
+  def __init__(self, randomize_gains, random=None, maxq=False, multi_task=False,
+               vert=False):
     """Initialize an instance of `PointMass`.
-
     Args:
       randomize_gains: A `bool`, whether to randomize the actuator gains.
       random: Optional, either a `numpy.random.RandomState` instance, an
@@ -75,6 +86,8 @@ class Rope(base.Task):
     """
     self._randomize_gains = randomize_gains
     self._maxq = maxq
+    self.multi_task = multi_task
+    self.vert = vert
     # self.action_spec=specs.BoundedArraySpec(
     # shape=(2,), dtype=np.float, minimum=0.0, maximum=1.0)
     super(Rope, self).__init__(random=random)
@@ -82,12 +95,8 @@ class Rope(base.Task):
   def action_spec(self, physics):
     """Returns a `BoundedArraySpec` matching the `physics` actuators."""
 
-    if self._maxq:
-        return specs.BoundedArray(
-                shape=(4,), dtype=np.float, minimum=[-1.0] * 4, maximum=[1.0] * 4)
-    else:
-        return specs.BoundedArray(
-            shape=(2,), dtype=np.float, minimum=[-1.0] * 2, maximum=[1.0] * 2)
+    return specs.BoundedArray(
+        shape=(2,), dtype=np.float, minimum=[-1.0] * 2, maximum=[1.0] * 2)
 
   def initialize_episode(self,physics):
     render_kwargs = {}
@@ -98,6 +107,11 @@ class Rope(base.Task):
 
     self.image = image
 
+    if self._multi_task:
+        self._current_task = np.random.choice([0, 1, 2, 3])
+    else:
+        self._current_task = 0
+
     physics.named.data.xfrc_applied[CORNER_INDEX_ACTION, :2] = np.random.uniform(-0.8, 0.8, size=8).reshape((4,2))
     super(Rope, self).initialize_episode(physics)
 
@@ -106,12 +120,12 @@ class Rope(base.Task):
     physics.named.data.qfrc_applied[:2]=0
 
     if self._maxq:
-        location = (action[:2] * 0.5 + 0.5) * 63
+        location = np.round((action[:2] * 0.5 + 0.5) * 63).astype('int32')
         goal_position = action[2:]
-        goal_position = goal_position * 0.05
+        goal_position = goal_position * 0.1
     else:
         goal_position = action
-        goal_position = goal_position * 0.05
+        goal_position = goal_position * 0.1
         location = self.current_loc
 
     # computing the mapping from geom_xpos to location in image
@@ -121,41 +135,32 @@ class Rope(base.Task):
     cam_mat = physics.named.data.cam_xmat['fixed'].reshape((3, 3))
     cam_pos = physics.named.data.cam_xpos['fixed'].reshape((3, 1))
     cam = np.concatenate([cam_mat, cam_pos], axis=1)
-    cam_pos_all = np.zeros((25, 3, 1))
-    for i in range(25):
-      geom_xpos_added = np.concatenate([physics.data.geom_xpos[i+5], np.array([1])]).reshape((4, 1))
+    cam_pos_all = np.zeros((26, 3, 1))
+    for i in range(26):
+      geom_xpos_added = np.concatenate([physics.data.geom_xpos[i], np.array([1])]).reshape((4, 1))
       cam_pos_all[i] = cam_matrix.dot(cam.dot(geom_xpos_added)[:3])
 
     # cam_pos_xy=cam_pos_all[5:,:]
-    cam_pos_xy = np.rint(cam_pos_all[:, :2].reshape((25, 2)) / cam_pos_all[:, 2])
+    cam_pos_xy = np.rint(cam_pos_all[:, :2].reshape((26, 2)) / cam_pos_all[:, 2])
     cam_pos_xy = cam_pos_xy.astype(int)
     cam_pos_xy[:, 1] = W - cam_pos_xy[:, 1]
-    cam_pos_xy[:, [0, 1]] = cam_pos_xy[:, [1, 0]]
 
-    dists = np.linalg.norm(cam_pos_xy - location[None, :], axis=1)
-    index = np.argmin(dists)
+    epsilon = 4
+    possible_index = []
+    possible_z = []
+    for i in range(26):
+      # flipping the x and y to make sure it corresponds to the real location
+      if abs(cam_pos_xy[i][0] - location[1]) < epsilon and abs(
+              cam_pos_xy[i][1] - location[0]) < epsilon and i > 0 and np.all(cam_pos_xy[i] < W) and np.all(
+        cam_pos_xy[i] >= 0):
+        possible_index.append(i)
+        possible_z.append(physics.data.geom_xpos[i, 2])
 
-   # epsilon = 4
-   # possible_index = []
-   # possible_z = []
-   # for i in range(25):
-   #   # flipping the x and y to make sure it corresponds to the real location
-   #   if abs(cam_pos_xy[i][0] - location[0]) < epsilon and abs(
-   #           cam_pos_xy[i][1] - location[1]) < epsilon and i > 0 and np.all(cam_pos_xy[i] < W) and np.all(
-   #     cam_pos_xy[i] >= 0):
-   #     possible_index.append(i+4)
-   #     possible_z.append(physics.data.geom_xpos[i+5, 2])
-
-    #if possible_index != []:
-    if True:
-      #index = possible_index[possible_z.index(max(possible_z))]
-
-      #corner_action = index - 5
-      #corner_geom = index
+    if possible_index != []:
+      index = possible_index[possible_z.index(max(possible_z))]
 
       corner_action = index
-      corner_geom = index + 5
-      start = physics.named.data.geom_xpos[corner_geom, :2].copy()
+      corner_geom = index
 
       position = goal_position + physics.named.data.geom_xpos[corner_geom,:2]
       dist = position - physics.named.data.geom_xpos[corner_geom,:2]
@@ -163,21 +168,12 @@ class Rope(base.Task):
       loop = 0
       while np.linalg.norm(dist) > 0.025:
         loop += 1
-        if loop > 100:
+        if loop > 40:
           break
-        physics.named.data.xfrc_applied[corner_action, :2] = 25 * dist
+        physics.named.data.xfrc_applied[corner_action, :2] = dist * 20
         physics.step()
         self.after_step(physics)
         dist = position - physics.named.data.geom_xpos[corner_geom,:2]
-  #  else:
-  #      if np.all(action != 0):
-  #          print('failed', location, action, cam_pos_xy)
-        #tmp = np.zeros((64, 64, 3), dtype='uint8')
-        #for i in range(25):
-        #    tmp[cam_pos_xy[i, 0], cam_pos_xy[i, 1]] = (255, 255, 255)
-        #import cv2
-        #cv2.imwrite('tmp/debug_point.png', tmp)
-        #cv2.imwrite('tmp/debug_true.png', self.image)
 
   def get_termination(self,physics):
     if self.num_loc<1:
@@ -212,6 +208,10 @@ class Rope(base.Task):
     else:
         obs['location'] = np.tile(location, 50).reshape(-1).astype('float32') / 63
 
+    if self.multi_task:
+        obs['task'] = np.zeros(4).astype('float32')
+        obs['task'][self.current_task] = 1.
+
     return obs
 
 
@@ -236,9 +236,20 @@ class Rope(base.Task):
     return location
 
   def get_reward(self,physics):
-    current_mask = np.all(self.image>150,axis=2).astype(int)
-    reward_mask = current_mask
-    line = np.linspace(0,31,num=32)*(-0.5)
-    column = np.concatenate([np.flip(line),line])
-    reward =np.sum(reward_mask* np.exp(column).reshape((W,1)))/111.0
-    return reward
+    if self.multi_task:
+        true_geoms = np.load(f'/home/wilson/dm_control/suite/rope_geoms/rope_{self._current_task}.npy')
+        current_geoms = self.get_geoms(physics)
+        geom_error = min(np.linalg.norm(current_geoms - true_geoms, axis=-1).sum(),
+                         np.linalg.norm(current_geoms - true_geoms[::-1], axis=-1).sum())
+
+        return -geom_error
+    else:
+        current_mask = np.all(self.image>150,axis=2).astype(int)
+        reward_mask = current_mask
+        line = np.linspace(0,31,num=32)*(-0.5)
+        column = np.concatenate([np.flip(line),line])
+        if self.vert:
+            reward =np.sum(reward_mask* np.exp(column).reshape((1,W)))/111.0
+        else:
+            reward =np.sum(reward_mask* np.exp(column).reshape((W,1)))/111.0
+        return reward
