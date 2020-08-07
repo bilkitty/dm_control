@@ -1,11 +1,10 @@
 import dm_env
-from dm_env import specs
-
-from modder import LightModder, CameraModder
+import numpy as np
+from dm_control.suite.wrappers.modder import LightModder, CameraModder
 
 
 class DomainRand(dm_env.Environment):
-  """Wraps a control environment and adds a rendered pixel observation."""
+    """Wraps a control environment and adds a rendered pixel observation."""
 
     def __init__(self, env):
         """Initializes a new Domain Randomization Wrapper"""
@@ -25,7 +24,7 @@ class DomainRand(dm_env.Environment):
         # self.cam_quat = np.array([1, 0, 0, 0])
 
         # Lighting
-        self.lightmodder = LightModder(self._env.physics)
+        self.lightmodder = LightModder(self.physics)
         self.light_diffuse = self.lightmodder.get_diffuse('light').copy()
         self.light_specular = self.lightmodder.get_specular('light').copy()
         self.light_ambient = self.lightmodder.get_ambient('light').copy()
@@ -70,7 +69,7 @@ class DomainRand(dm_env.Environment):
         self.physics.named.model.geom_friction[1:, 2] = np.random.uniform(-0.0005, 0.0005) + self.geom_friction[1:, 2]
 
         # inertia randomization
-        self.physics.named.model.body_inertia[1:] = np.random.uniform(-0.5, 0.5) * 1e-05 + body_inertia[1:]
+        self.physics.named.model.body_inertia[1:] = np.random.uniform(-0.5, 0.5) * 1e-05 + self.body_inertia[1:]
 
         # mass randomization
         self.physics.named.model.body_mass[1:] = np.random.uniform(-0.05, 0.05) + self.body_mass[1:]
