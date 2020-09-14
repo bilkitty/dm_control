@@ -72,7 +72,7 @@ class Rope(base.Task):
     """A point_mass `Task` to reach target with smooth reward."""
 
     def __init__(self, randomize_gains, random=None, random_pick=False, init_flat=False,
-                 use_dr=False):
+                 use_dr=False, per_traj=False):
         """Initialize an instance of `PointMass`.
 
         Args:
@@ -86,6 +86,8 @@ class Rope(base.Task):
         self._random_pick = random_pick
         self._n_geoms = 25
         self._use_dr = use_dr
+        self._per_traj = per_traj
+
         super(Rope, self).__init__(random=random)
 
     def action_spec(self, physics):
@@ -119,6 +121,8 @@ class Rope(base.Task):
             self.light_dir = np.array([0, 0, -1])
             self.light_pos = np.array([0, 0, 1])
 
+            self.apply_dr(physics)
+
         render_kwargs = {}
         render_kwargs['camera_id'] = 0
         render_kwargs['width'] = W
@@ -129,6 +133,50 @@ class Rope(base.Task):
         if not self._init_flat:
             physics.named.data.xfrc_applied[CORNER_INDEX_ACTION, :2] = np.random.uniform(-0.8, 0.8, size=8).reshape((4, 2))
         super(Rope, self).initialize_episode(physics)
+
+    def apply_dr(self, physics):
+        # visual randomization
+        # light randomization
+        lightmodder = LightModder(physics)
+        ambient_value = self.light_ambient.copy() + np.random.uniform(-0.5, 0.5, size=3)
+        lightmodder.set_ambient('light', ambient_value)
+
+        shadow_value = self.light_castshadow.copy()
+        lightmodder.set_castshadow('light', shadow_value + np.random.uniform(0, 40))
+        diffuse_value = self.light_diffuse.copy()
+        lightmodder.set_diffuse('light',diffuse_value+np.random.uniform(-0.1,0.1,))
+        lightmodder.set_diffuse('light', np.array([0, 0, 0]))
+
+        dir_value = self.light_dir.copy()
+        lightmodder.set_dir('light', dir_value + np.random.uniform(-0.1, 0.1))
+        pos_value = self.light_pos.copy()
+        lightmodder.set_pos('light', pos_value + np.random.uniform(-0.1, 0.1))
+        specular_value = self.light_specular.copy()
+        lightmodder.set_specular('light', specular_value + np.random.uniform(-0.1, 0.1))
+
+        # physics randomization
+
+        # damping randomization
+
+        physics.named.model.dof_damping[:] = np.random.uniform(0, 0.0001) + self.dof_damping
+
+        # # friction randomization
+        geom_friction = self.geom_friction.copy()
+        physics.named.model.geom_friction[1:, 0] = np.random.uniform(-0.5, 0.5) + geom_friction[1:, 0]
+
+        physics.named.model.geom_friction[1:, 1] = np.random.uniform(-0.002, 0.002) + geom_friction[1:, 1]
+
+        physics.named.model.geom_friction[1:, 2] = np.random.uniform(-0.0005, 0.0005) + geom_friction[1:, 2]
+
+        # # inertia randomization
+        body_inertia = self.body_inertia.copy()
+        physics.named.model.body_inertia[1:] = np.random.uniform(-0.5, 0.5) * 1e-07 + body_inertia[1:]
+
+        # mass randomization
+        body_mass = self.body_mass.copy()
+
+        physics.named.model.body_mass[1:] = np.random.uniform(-0.0005, 0.0005) + body_mass[1:]
+
 
     def before_step(self, action, physics):
         physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
@@ -143,48 +191,8 @@ class Rope(base.Task):
             goal_position = goal_position * 0.075
             location = self.current_loc
 
-        if self._use_dr:
-            # visual randomization
-            # light randomization
-            lightmodder = LightModder(physics)
-            ambient_value = self.light_ambient.copy() + np.random.uniform(-0.5, 0.5, size=3)
-            lightmodder.set_ambient('light', ambient_value)
-
-            shadow_value = self.light_castshadow.copy()
-            lightmodder.set_castshadow('light', shadow_value + np.random.uniform(0, 40))
-            diffuse_value = self.light_diffuse.copy()
-            lightmodder.set_diffuse('light',diffuse_value+np.random.uniform(-0.1,0.1,))
-            lightmodder.set_diffuse('light', np.array([0, 0, 0]))
-
-            dir_value = self.light_dir.copy()
-            lightmodder.set_dir('light', dir_value + np.random.uniform(-0.1, 0.1))
-            pos_value = self.light_pos.copy()
-            lightmodder.set_pos('light', pos_value + np.random.uniform(-0.1, 0.1))
-            specular_value = self.light_specular.copy()
-            lightmodder.set_specular('light', specular_value + np.random.uniform(-0.1, 0.1))
-
-            # physics randomization
-
-            # damping randomization
-
-            physics.named.model.dof_damping[:] = np.random.uniform(0, 0.0001) + self.dof_damping
-
-            # # friction randomization
-            geom_friction = self.geom_friction.copy()
-            physics.named.model.geom_friction[1:, 0] = np.random.uniform(-0.5, 0.5) + geom_friction[1:, 0]
-
-            physics.named.model.geom_friction[1:, 1] = np.random.uniform(-0.002, 0.002) + geom_friction[1:, 1]
-
-            physics.named.model.geom_friction[1:, 2] = np.random.uniform(-0.0005, 0.0005) + geom_friction[1:, 2]
-
-            # # inertia randomization
-            body_inertia = self.body_inertia.copy()
-            physics.named.model.body_inertia[1:] = np.random.uniform(-0.5, 0.5) * 1e-07 + body_inertia[1:]
-
-            # mass randomization
-            body_mass = self.body_mass.copy()
-
-            physics.named.model.body_mass[1:] = np.random.uniform(-0.0005, 0.0005) + body_mass[1:]
+        if self._use_dr and not self._per_traj:
+            self.apply_dr(physics)
 
         # computing the mapping from geom_xpos to location in image
         cam_fovy = physics.named.model.cam_fovy['fixed']

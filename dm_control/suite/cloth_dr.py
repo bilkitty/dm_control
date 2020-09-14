@@ -75,7 +75,7 @@ class Physics(mujoco.Physics):
 class Cloth(base.Task):
     """A Stack `Task`: stack the boxes."""
 
-    def __init__(self, randomize_gains, random=None, random_pick=True, init_flat=False, use_dr=False, texture_randomization=True):
+    def __init__(self, randomize_gains, random=None, random_pick=True, init_flat=False, use_dr=False, texture_randomization=True, per_traj=False):
         """Initialize an instance of `PointMass`.
 
         Args:
@@ -89,6 +89,7 @@ class Cloth(base.Task):
         self._init_flat = init_flat
         self._use_dr = use_dr
         self._texture_randomization = texture_randomization
+        self._per_traj = per_traj
 
         super(Cloth, self).__init__(random=random)
 
@@ -133,19 +134,14 @@ class Cloth(base.Task):
                 [np.zeros((1, 3)), np.tile(np.array([[2.32e-07, 2.32e-07, 4.64e-07]]), (81, 1))], axis=0)
             self.geom_friction = np.tile(np.array([[1, 0.005, 0.001]]), (86, 1))
 
+            self.apply_dr(physics)
+
         if not self._init_flat:
             physics.named.data.xfrc_applied[CORNER_INDEX_ACTION, :3] = np.random.uniform(-.3, .3, size=3)
 
         super(Cloth, self).initialize_episode(physics)
 
-    def before_step(self, action, physics):
-
-        """Sets the control signal for the actuators to values in `action`."""
-        # Support legacy internal code.
-
-        # clear previous xfrc_force
-        physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
-
+    def apply_dr(self, physics):
         if self._use_dr:
             if self._texture_randomization:
                 physics.named.model.mat_texid[15] = np.random.choice(3, 1) + 9
@@ -213,6 +209,17 @@ class Cloth(base.Task):
             body_mass = self.body_mass.copy()
 
             physics.named.model.body_mass[1:] = np.random.uniform(-0.0005, 0.0005) + body_mass[1:]
+
+    def before_step(self, action, physics):
+
+        """Sets the control signal for the actuators to values in `action`."""
+        # Support legacy internal code.
+
+        # clear previous xfrc_force
+        physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
+
+        if not self._per_traj:
+            self.apply_dr(physics)
 
         # scale the position to be a normal range
         if not self._random_pick:
