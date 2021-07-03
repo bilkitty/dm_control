@@ -168,7 +168,7 @@ class Rope(base.Task):
         physics.named.data.qfrc_applied[:2] = 0
 
         index, direction = action
-        direction = direction * 0.05
+        direction = direction * 0.075
 
         if self._use_dr and not self._per_traj:
             self.apply_dr(physics)
