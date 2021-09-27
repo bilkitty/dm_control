@@ -42,7 +42,6 @@ _TOL = 1e-13
 _CLOSE = .01  # (Meters) Distance below which a thing is considered close.
 _CONTROL_TIMESTEP = .02  # (Seconds)
 _TIME_LIMIT = 30  # (Seconds)
-_FIXED_ACTION_DIMS = 6
 
 CORNER_INDEX_ACTION = ['B0_0', 'B0_8', 'B8_0', 'B8_8']
 CORNER_INDEX_GEOM = ['G0_0', 'G0_8', 'G8_0', 'G8_8']
@@ -94,16 +93,17 @@ class Cloth(base.Task):
 
         super(Cloth, self).__init__(random=random)
 
-    def action_spec(self, physics) -> specs.BoundedArray:
+    def action_spec(self, physics):
         """Returns a `BoundedArraySpec` matching the `physics` actuators."""
-        return specs.BoundedArray(
-            shape=(_FIXED_ACTION_DIMS,),
-            dtype=np.float,
-            minimum=[-1.0] * _FIXED_ACTION_DIMS,
-            maximum=[1.0] * _FIXED_ACTION_DIMS)
+        if not self._random_pick:
+            return specs.BoundedArray(
+                shape=(5,), dtype=np.float, minimum=[-1.0] * 5, maximum=[1.0] * 5)
+        else:
+            return specs.BoundedArray(
+                shape=(3,), dtype=np.float, minimum=[-1.0, -1.0, -1.0], maximum=[1.0, 1.0, 1.0])
 
 
-    def initialize_episode(self, physics) -> None:
+    def initialize_episode(self, physics):
         physics.named.data.xfrc_applied['B3_4', :3] = np.array([0, 0, -2])
         physics.named.data.xfrc_applied['B4_4', :3] = np.array([0, 0, -2])
 
@@ -141,7 +141,7 @@ class Cloth(base.Task):
 
         super(Cloth, self).initialize_episode(physics)
 
-    def apply_dr(self, physics) -> None:
+    def apply_dr(self, physics):
         if self._use_dr:
             if self._texture_randomization:
                 physics.named.model.mat_texid[15] = np.random.choice(3, 1) + 9
@@ -210,7 +210,7 @@ class Cloth(base.Task):
 
             physics.named.model.body_mass[1:] = np.random.uniform(-0.0005, 0.0005) + body_mass[1:]
 
-    def before_step(self, action: np.ndarray, physics) -> None:
+    def before_step(self, action, physics):
 
         """Sets the control signal for the actuators to values in `action`."""
         # Support legacy internal code.
@@ -222,15 +222,13 @@ class Cloth(base.Task):
             self.apply_dr(physics)
 
         # scale the position to be a normal range
-        assert action.shape[0] == _FIXED_ACTION_DIMS
-        d =_FIXED_ACTION_DIMS // 2
         if not self._random_pick:
-            location = (action[:2] * 0.5 + 0.5) * (W - 1)
+            location = (action[:2] * 0.5 + 0.5) * 63
             location = np.round(location).astype('int32')
+            goal_position = action[2:]
         else:
             location = self.current_loc
-
-        goal_position = action[d:d + 3]
+            goal_position = action
         goal_position = goal_position * 0.1
 
         # computing the mapping from geom_xpos to location in image
@@ -281,7 +279,7 @@ class Cloth(base.Task):
                 self.after_step(physics)
                 dist = position - physics.named.data.geom_xpos[corner_geom]
 
-    def get_observation(self, physics) -> dict:
+    def get_observation(self, physics):
         """Returns either features or only sensors (to be used with pixels)."""
         obs = collections.OrderedDict()
 
@@ -290,11 +288,11 @@ class Cloth(base.Task):
 
         if self._random_pick:
             self.current_loc = self.sample_location(physics)
-            obs['force_location'] = np.tile(self.current_loc, 50).reshape(-1).astype('float32') / 63.
+            obs['location'] = np.tile(self.current_loc, 50).reshape(-1).astype('float32') / 63.
 
         return obs
 
-    def get_image(self, physics) -> np.ndarray:
+    def get_image(self, physics):
         render_kwargs = {}
         render_kwargs['camera_id'] = 0
         render_kwargs['width'] = W
@@ -302,20 +300,20 @@ class Cloth(base.Task):
         image = physics.render(**render_kwargs)
         return image
 
-    def segment_image(self, image: np.ndarray) -> np.ndarray:
+    def segment_image(self, image):
         image_dim_1 = image[:, :, [1]]
         image_dim_2 = image[:, :, [2]]
         mask = np.all(image> 200, axis=2) + np.all(image_dim_2 < 40, axis=2) + \
                (~np.all(image_dim_1 > 135, axis=2))
         return mask > 0
 
-    def get_geoms(self, physics) -> np.ndarray:
+    def get_geoms(self, physics):
         geoms = np.array([[physics.named.data.geom_xpos[f'G{i}_{j}', :2]
                            for j in range(9)]
                            for i in range(9)], dtype='float32')
         return geoms
 
-    def sample_location(self, physics) -> np.ndarray:
+    def sample_location(self, physics):
         image = self.image
         location_range = np.transpose(np.where(self.segment_image(image)))
         num_loc = np.shape(location_range)[0]
@@ -323,7 +321,7 @@ class Cloth(base.Task):
         location = location_range[index]
         return location
 
-    def get_reward(self, physics) -> float:
+    def get_reward(self, physics):
         current_mask = self.segment_image(self.image).astype(int)
         area = np.sum(current_mask * self.mask)
         reward = area / np.sum(self.mask)

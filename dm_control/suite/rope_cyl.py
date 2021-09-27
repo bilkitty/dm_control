@@ -38,6 +38,7 @@ from dm_control.suite.wrappers.modder import LightModder
 from imageio import imsave
 
 _DEFAULT_TIME_LIMIT = 20
+_FIXED_ACTION_DIMS = 6
 SUITE = containers.TaggedTasks()
 
 CORNER_INDEX_ACTION = ['B3', 'B8', 'B10', 'B20']
@@ -91,20 +92,19 @@ class Rope(base.Task):
 
         super(Rope, self).__init__(random=random)
 
-    def action_spec(self, physics):
+    def action_spec(self, physics) -> specs.BoundedArray:
         """Returns a `BoundedArraySpec` matching the `physics` actuators."""
-        if self._random_pick:
-            return specs.BoundedArray(
-                shape=(2,), dtype=np.float, minimum=[-1.0] * 2, maximum=[1.0] * 2)
-        else:
-            return specs.BoundedArray(
-                shape=(4,), dtype=np.float, minimum=[-1.0] * 4, maximum=[1.0] * 4)
+        return specs.BoundedArray(
+            shape=(_FIXED_ACTION_DIMS,),
+            dtype=np.float,
+            minimum=[-1.0] * _FIXED_ACTION_DIMS,
+            maximum=[1.0] * _FIXED_ACTION_DIMS)
 
-    def get_geoms(self, physics):
+    def get_geoms(self, physics) -> np.ndarray:
         geoms = [physics.named.data.geom_xpos['G{}'.format(i)][:2] for i in range(self._n_geoms)]
         return np.array(geoms)
 
-    def initialize_episode(self, physics):
+    def initialize_episode(self, physics) -> None:
         if self._use_dr:
             self.dof_damping = np.concatenate([np.zeros((6)), np.ones(2 * (self._n_geoms - 1)) * 0.002], axis=0)
             self.body_mass = np.concatenate([np.zeros(1), np.ones(self._n_geoms) * 0.00563])
@@ -135,7 +135,7 @@ class Rope(base.Task):
             physics.named.data.xfrc_applied[CORNER_INDEX_ACTION, :2] = np.random.uniform(-0.8, 0.8, size=8).reshape((4, 2))
         super(Rope, self).initialize_episode(physics)
 
-    def apply_dr(self, physics):
+    def apply_dr(self, physics) -> None:
         # visual randomization
         # light randomization
         lightmodder = LightModder(physics)
@@ -179,18 +179,19 @@ class Rope(base.Task):
         physics.named.model.body_mass[1:] = np.random.uniform(-0.0005, 0.0005) + body_mass[1:]
 
 
-    def before_step(self, action, physics):
+    def before_step(self, action : np.ndarray, physics) -> None:
         physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
         physics.named.data.qfrc_applied[:2] = 0
 
+        assert action.shape[0] == _FIXED_ACTION_DIMS
+        d =_FIXED_ACTION_DIMS // 2
         if not self._random_pick:
-            location = (action[:2] * 0.5 + 0.5) * 63
-            goal_position = action[2:]
-            goal_position = goal_position * 0.075
+            location = (action[:2] * 0.5 + 0.5) * (W - 1)
         else:
-            goal_position = action
-            goal_position = goal_position * 0.075
             location = self.current_loc
+
+        goal_position = action[d:d + 2]
+        goal_position = goal_position * 0.075
 
         if self._use_dr and not self._per_traj:
             self.apply_dr(physics)
@@ -233,13 +234,13 @@ class Rope(base.Task):
                 self.after_step(physics)
                 dist = position - physics.named.data.geom_xpos[corner_geom, :2]
 
-    def get_termination(self, physics):
+    def get_termination(self, physics) -> float or None:
         if self.num_loc < 1:
             return 1.0
         else:
             return None
 
-    def get_observation(self, physics):
+    def get_observation(self, physics) -> dict:
         """Returns an observation of the state."""
         obs = collections.OrderedDict()
         if not self._random_pick:
@@ -257,13 +258,13 @@ class Rope(base.Task):
         self.current_loc = location
 
         if self.current_loc is None:
-            obs['force_location'] = np.tile([-1, -1], 50).reshape(-1).astype('float32') / 63
+            obs['force_location'] = np.tile([-1, -1], 50).reshape(-1).astype('float32') / (W - 1)
         else:
-            obs['force_location'] = np.tile(location, 50).reshape(-1).astype('float32') / 63
+            obs['force_location'] = np.tile(location, 50).reshape(-1).astype('float32') / (W - 1)
 
         return obs
 
-    def sample_location(self, physics):
+    def sample_location(self, physics) -> np.ndarray or None:
         image = self.get_image(physics)
         self.image = image
 
@@ -279,7 +280,7 @@ class Rope(base.Task):
 
         return location
 
-    def get_image(self, physics):
+    def get_image(self, physics) -> np.ndarray:
         render_kwargs = {}
         render_kwargs['camera_id'] = 0
         render_kwargs['width'] = W
@@ -287,18 +288,12 @@ class Rope(base.Task):
         image = physics.render(**render_kwargs)
         return image
 
-    def segment_image(self, image):
+    def segment_image(self, image: np.ndarray) -> np.ndarray:
         return np.all(image > 150, axis=2)
 
-    def get_reward(self, physics):
+    def get_reward(self, physics) -> float:
         reward_mask = self.segment_image(self.image).astype(int)
         line = np.linspace(0, 31, num=32) * (-0.5)
         column = np.concatenate([np.flip(line), line])
         reward = np.sum(reward_mask * np.exp(column).reshape((W, 1))) / 111.0
         return reward
-
-    def get_geoms(self, physics):
-        return physics.data.geom_xpos[:3]
-
-    def get_obj_mask(self, image):
-        return self.segment_image(image)

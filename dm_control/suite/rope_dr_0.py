@@ -38,7 +38,6 @@ from dm_control.suite.wrappers.modder import LightModder
 from imageio import imsave
 
 _DEFAULT_TIME_LIMIT = 20
-_FIXED_ACTION_DIMS = 6
 SUITE = containers.TaggedTasks()
 
 CORNER_INDEX_ACTION = ['B3', 'B8', 'B10', 'B20']
@@ -93,11 +92,12 @@ class Rope(base.Task):
 
     def action_spec(self, physics):
         """Returns a `BoundedArraySpec` matching the `physics` actuators."""
-        return specs.BoundedArray(
-            shape=(_FIXED_ACTION_DIMS,),
-            dtype=np.float,
-            minimum=[-1.0] * _FIXED_ACTION_DIMS,
-            maximum=[1.0] * _FIXED_ACTION_DIMS)
+        if self._random_pick:
+            return specs.BoundedArray(
+                shape=(2,), dtype=np.float, minimum=[-1.0] * 2, maximum=[1.0] * 2)
+        else:
+            return specs.BoundedArray(
+                shape=(4,), dtype=np.float, minimum=[-1.0] * 4, maximum=[1.0] * 4)
 
     def get_geoms(self, physics):
         geoms = [physics.named.data.geom_xpos['G{}'.format(i)][:2] for i in range(self._n_geoms)]
@@ -182,14 +182,12 @@ class Rope(base.Task):
         physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
         physics.named.data.qfrc_applied[:2] = 0
 
-        assert action.shape[0] == _FIXED_ACTION_DIMS
-        d =_FIXED_ACTION_DIMS // 2
         if not self._random_pick:
-            location = (action[:2] * 0.5 + 0.5) * (W - 1)
-            goal_position = action[d:d + 2]
+            location = (action[:2] * 0.5 + 0.5) * 63
+            goal_position = action[2:]
             goal_position = goal_position * 0.075
         else:
-            goal_position = action[d:d + 2]
+            goal_position = action
             goal_position = goal_position * 0.075
             location = self.current_loc
 
@@ -258,9 +256,9 @@ class Rope(base.Task):
         self.current_loc = location
 
         if self.current_loc is None:
-            obs['force_location'] = np.tile([-1, -1], 50).reshape(-1).astype('float32') / (W - 1)
+            obs['location'] = np.tile([-1, -1], 50).reshape(-1).astype('float32') / 63
         else:
-            obs['force_location'] = np.tile(location, 50).reshape(-1).astype('float32') / (W - 1)
+            obs['location'] = np.tile(location, 50).reshape(-1).astype('float32') / 63
 
         return obs
 
