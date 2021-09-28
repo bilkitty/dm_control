@@ -72,7 +72,7 @@ class Physics(mujoco.Physics):
 class Rope(base.Task):
     """A point_mass `Task` to reach target with smooth reward."""
 
-    def __init__(self, randomize_gains, random=None, random_pick=False, init_flat=False,
+    def __init__(self, randomize_gains, random=None, random_pick=True, init_flat=False,
                  use_dr=False, per_traj=False):
         """Initialize an instance of `PointMass`.
 
@@ -185,13 +185,12 @@ class Rope(base.Task):
         assert action.shape[0] == _FIXED_ACTION_DIMS
         d =_FIXED_ACTION_DIMS // 2
         if not self._random_pick:
-            location = (action[:2] * 0.5 + 0.5) * (W - 1)
-            goal_position = action[d:d + 2]
-            goal_position = goal_position * 0.075
+            pick_location = (action[:2] * 0.5 + 0.5) * (W - 1)
         else:
-            goal_position = action[d:d + 2]
-            goal_position = goal_position * 0.075
-            location = self.current_loc
+            pick_location = self.current_loc
+
+        goal_position = action[d:d + 2]
+        goal_position = goal_position * 0.075
 
         if self._use_dr and not self._per_traj:
             self.apply_dr(physics)
@@ -214,7 +213,7 @@ class Rope(base.Task):
         cam_pos_xy[:, 1] = W - cam_pos_xy[:, 1]
         cam_pos_xy[:, [0, 1]] = cam_pos_xy[:, [1, 0]]
 
-        dists = np.linalg.norm(cam_pos_xy - location[None, :], axis=1)
+        dists = np.linalg.norm(cam_pos_xy - pick_location[None, :], axis=1)
         index = np.argmin(dists)
 
         if True:
@@ -244,7 +243,7 @@ class Rope(base.Task):
         """Returns an observation of the state."""
         obs = collections.OrderedDict()
         if not self._random_pick:
-            location = [-1, 1]
+            pick_location = np.array([-1, 1])
             image = self.get_image(physics)
             mask = self.segment_image(image)
             self.image = image
@@ -254,13 +253,19 @@ class Rope(base.Task):
             num_loc = np.shape(location_range)[0]
             self.num_loc = num_loc
         else:
-            location = self.sample_location(physics)
-        self.current_loc = location
+            pick_location = self.sample_location(physics)
+        self.current_loc = pick_location
 
         if self.current_loc is None:
-            obs['force_location'] = np.tile([-1, -1], 50).reshape(-1).astype('float32') / (W - 1)
-        else:
-            obs['force_location'] = np.tile(location, 50).reshape(-1).astype('float32') / (W - 1)
+            pick_location = np.array([-1, -1])
+
+        obs['pick_location'] = np.tile(pick_location, 50).reshape(-1).astype('float32') / (W - 1)
+
+        # generate random action as unif(0,1) * (hi - lo) + lo
+        random_action = np.random.rand(_FIXED_ACTION_DIMS,) * 2 - 1
+        random_action[:2] = pick_location.astype('float32') / (W - 1)
+        random_action[2] = 0.  # todo: would be nice to use depth data
+        obs['action_sample'] = random_action
 
         return obs
 

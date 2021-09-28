@@ -225,10 +225,10 @@ class Cloth(base.Task):
         assert action.shape[0] == _FIXED_ACTION_DIMS
         d =_FIXED_ACTION_DIMS // 2
         if not self._random_pick:
-            location = (action[:2] * 0.5 + 0.5) * (W - 1)
-            location = np.round(location).astype('int32')
+            pick_location = (action[:2] * 0.5 + 0.5) * (W - 1)
+            pick_location = np.round(pick_location).astype('int32')
         else:
-            location = self.current_loc
+            pick_location = self.current_loc
 
         goal_position = action[d:d + 3]
         goal_position = goal_position * 0.1
@@ -256,8 +256,8 @@ class Cloth(base.Task):
         possible_z = []
         for i in range(81):
             # flipping the x and y to make sure it corresponds to the real location
-            if abs(cam_pos_xy[i][0] - location[1]) < epsilon and abs(
-                    cam_pos_xy[i][1] - location[0]) < epsilon:
+            if abs(cam_pos_xy[i][0] - pick_location[1]) < epsilon and abs(
+                    cam_pos_xy[i][1] - pick_location[0]) < epsilon:
                 possible_index.append(i)
                 possible_z.append(physics.data.geom_xpos[i, 2])
 
@@ -287,10 +287,14 @@ class Cloth(base.Task):
 
         image = self.get_image(physics)
         self.image = image
+        self.current_loc = self.sample_location(physics) if self._random_pick else np.array([-1, 1])
+        obs['pick_location'] = np.tile(self.current_loc, 50).reshape(-1).astype('float32') / (W - 1)
 
-        if self._random_pick:
-            self.current_loc = self.sample_location(physics)
-            obs['force_location'] = np.tile(self.current_loc, 50).reshape(-1).astype('float32') / 63.
+        # generate random action as unif(0,1) * (hi - lo) + lo
+        random_action = np.random.rand(_FIXED_ACTION_DIMS,) * 2 - 1
+        random_action[:2] = self.current_loc.astype('float32') / (W - 1)
+        random_action[2] = 0.  # todo: would be nice to use depth data
+        obs['action_sample'] = random_action
 
         return obs
 
@@ -319,9 +323,13 @@ class Cloth(base.Task):
         image = self.image
         location_range = np.transpose(np.where(self.segment_image(image)))
         num_loc = np.shape(location_range)[0]
-        index = np.random.randint(num_loc)
-        location = location_range[index]
-        return location
+        if num_loc == 0:
+            pick_location = np.array([-1, -1])
+        else:
+            index = np.random.randint(num_loc)
+            pick_location = location_range[index]
+
+        return pick_location
 
     def get_reward(self, physics) -> float:
         current_mask = self.segment_image(self.image).astype(int)
