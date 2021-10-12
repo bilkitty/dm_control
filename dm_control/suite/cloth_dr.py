@@ -142,83 +142,82 @@ class Cloth(base.Task):
         super(Cloth, self).initialize_episode(physics)
 
     def apply_dr(self, physics) -> None:
-        if self._use_dr:
-            if self._texture_randomization:
-                physics.named.model.mat_texid[15] = np.random.choice(3, 1) + 9
+        if self._texture_randomization:
+            physics.named.model.mat_texid[15] = np.random.choice(3, 1) + 9
 
-            ### visual randomization
+        ### visual randomization
 
-            #light randomization
-            lightmodder = LightModder(physics)
-            # ambient_value=lightmodder.get_ambient('light')
-            ambient_value = self.light_ambient.copy() + np.random.uniform(-0.4, 0.4, size=3)
-            lightmodder.set_ambient('light', ambient_value)
+        #light randomization
+        lightmodder = LightModder(physics)
+        # ambient_value=lightmodder.get_ambient('light')
+        ambient_value = self.light_ambient.copy() + np.random.uniform(-0.4, 0.4, size=3)
+        lightmodder.set_ambient('light', ambient_value)
 
-            # shadow_value=lightmodder.get_castshadow('light')
-            shadow_value = self.light_castshadow.copy()
-            lightmodder.set_castshadow('light', shadow_value + np.random.uniform(0, 40))
-            # diffuse_value=lightmodder.get_diffuse('light')
-            diffuse_value = self.light_diffuse.copy()
-            lightmodder.set_diffuse('light', diffuse_value + np.random.uniform(-0.01, 0.01, ))
-            # dir_value=lightmodder.get_dir('light')
-            dir_value = self.light_dir.copy()
-            lightmodder.set_dir('light', dir_value + np.random.uniform(-0.1, 0.1))
-            # pos_value=lightmodder.get_pos('light')
-            pos_value = self.light_pos.copy()
-            lightmodder.set_pos('light', pos_value + np.random.uniform(-0.1, 0.1))
-            # specular_value=lightmodder.get_specular('light')
-            specular_value = self.light_specular.copy()
-            lightmodder.set_specular('light', specular_value + np.random.uniform(-0.1, 0.1))
+        # shadow_value=lightmodder.get_castshadow('light')
+        shadow_value = self.light_castshadow.copy()
+        lightmodder.set_castshadow('light', shadow_value + np.random.uniform(0, 40))
+        # diffuse_value=lightmodder.get_diffuse('light')
+        diffuse_value = self.light_diffuse.copy()
+        lightmodder.set_diffuse('light', diffuse_value + np.random.uniform(-0.01, 0.01, ))
+        # dir_value=lightmodder.get_dir('light')
+        dir_value = self.light_dir.copy()
+        lightmodder.set_dir('light', dir_value + np.random.uniform(-0.1, 0.1))
+        # pos_value=lightmodder.get_pos('light')
+        pos_value = self.light_pos.copy()
+        lightmodder.set_pos('light', pos_value + np.random.uniform(-0.1, 0.1))
+        # specular_value=lightmodder.get_specular('light')
+        specular_value = self.light_specular.copy()
+        lightmodder.set_specular('light', specular_value + np.random.uniform(-0.1, 0.1))
 
-            # material randomization#
-            #    Material_ENUM=['ground','wall_x','wall_y','wall_neg_x','wall_neg_x','wall_neg_y']
-            #    materialmodder=MaterialModder(physics)
-            #    for name in Material_ENUM:
-            #     materialmodder.rand_all(name)
+        # material randomization#
+        #    Material_ENUM=['ground','wall_x','wall_y','wall_neg_x','wall_neg_x','wall_neg_y']
+        #    materialmodder=MaterialModder(physics)
+        #    for name in Material_ENUM:
+        #     materialmodder.rand_all(name)
 
-            # camera randomization
-            # cameramodder=CameraModder(physics)
-            # # fovy_value=cameramodder.get_fovy('fixed')
-            # # cameramodder.set_fovy('fixed',fovy_value+np.random.uniform(-1,1))
-            # # pos_value = cameramodder.get_pos('fixed')
-            # pos_value=self.cam_pos.copy()
-            # cameramodder.set_pos('fixed',np.random.uniform(-0.003,0.003,size=3)+pos_value)
-            # # quat_value = cameramodder.get_quat('fixed')
-            # quat_value=self.cam_quat.copy()
-            # cameramodder.set_quat('fixed',quat_value+np.random.uniform(-0.01,0.01,size=4))
+        # camera randomization
+        # cameramodder=CameraModder(physics)
+        # # fovy_value=cameramodder.get_fovy('fixed')
+        # # cameramodder.set_fovy('fixed',fovy_value+np.random.uniform(-1,1))
+        # # pos_value = cameramodder.get_pos('fixed')
+        # pos_value=self.cam_pos.copy()
+        # cameramodder.set_pos('fixed',np.random.uniform(-0.003,0.003,size=3)+pos_value)
+        # # quat_value = cameramodder.get_quat('fixed')
+        # quat_value=self.cam_quat.copy()
+        # cameramodder.set_quat('fixed',quat_value+np.random.uniform(-0.01,0.01,size=4))
 
-            ### physics randomization
+        ### physics randomization
 
-            # damping randomization
+        # damping randomization
 
-            physics.named.model.dof_damping[:] = np.random.uniform(0, 0.0001) + self.dof_damping
+        physics.named.model.dof_damping[:] = np.random.uniform(0, 0.0001) + self.dof_damping
 
-            # # friction randomization
-            geom_friction = self.geom_friction.copy()
-            physics.named.model.geom_friction[5:, 0] = np.random.uniform(-0.5, 0.5) + geom_friction[5:, 0]
-            #
-            physics.named.model.geom_friction[5:, 1] = np.random.uniform(-0.002, 0.002) + geom_friction[5:, 1]
-            #
-            physics.named.model.geom_friction[5:, 2] = np.random.uniform(-0.0005, 0.0005) + geom_friction[5:, 2]
-            #
-            # # inertia randomization
-            body_inertia = self.body_inertia.copy()
-            physics.named.model.body_inertia[1:] = np.random.uniform(-0.5, 0.5) * 1e-07 + body_inertia[1:]
-            #
-            # mass randomization
-            body_mass = self.body_mass.copy()
+        # # friction randomization
+        geom_friction = self.geom_friction.copy()
+        physics.named.model.geom_friction[5:, 0] = np.random.uniform(-0.5, 0.5) + geom_friction[5:, 0]
+        #
+        physics.named.model.geom_friction[5:, 1] = np.random.uniform(-0.002, 0.002) + geom_friction[5:, 1]
+        #
+        physics.named.model.geom_friction[5:, 2] = np.random.uniform(-0.0005, 0.0005) + geom_friction[5:, 2]
+        #
+        # # inertia randomization
+        body_inertia = self.body_inertia.copy()
+        physics.named.model.body_inertia[1:] = np.random.uniform(-0.5, 0.5) * 1e-07 + body_inertia[1:]
+        #
+        # mass randomization
+        body_mass = self.body_mass.copy()
 
-            physics.named.model.body_mass[1:] = np.random.uniform(-0.0005, 0.0005) + body_mass[1:]
+        physics.named.model.body_mass[1:] = np.random.uniform(-0.0005, 0.0005) + body_mass[1:]
 
     def before_step(self, action: np.ndarray, physics) -> None:
-
         """Sets the control signal for the actuators to values in `action`."""
         # Support legacy internal code.
 
         # clear previous xfrc_force
         physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
+        #physics.named.data.qfrc_applied[:3] = 0
 
-        if not self._per_traj:
+        if self._use_dr and not self._per_traj:
             self.apply_dr(physics)
 
         # scale the position to be a normal range
@@ -234,30 +233,35 @@ class Cloth(base.Task):
         goal_position = goal_position * 0.1
 
         # computing the mapping from geom_xpos to location in image
-        cam_fovy = physics.model.cam_fovy[0]
+        cam_fovy = physics.named.model.cam_fovy['fixed']
         f = 0.5 * W / math.tan(cam_fovy * math.pi / 360)
         cam_matrix = np.array([[f, 0, W / 2], [0, f, W / 2], [0, 0, 1]])
-        cam_mat = physics.data.cam_xmat[0].reshape((3, 3))
-        cam_pos = physics.data.cam_xpos[0].reshape((3, 1))
+        cam_mat = physics.named.data.cam_xmat['fixed'].reshape((3, 3))
+        cam_pos = physics.named.data.cam_xpos['fixed'].reshape((3, 1))
         cam = np.concatenate([cam_mat, cam_pos], axis=1)
-        cam_pos_all = np.zeros((81, 3, 1))
+        cam_pos_all = np.zeros((81, 3, 1)) # assuming 9x9 geom mesh
         for i in range(81):
-            geom_xpos_added = np.concatenate([physics.data.geom_xpos[i+5], np.array([1])]).reshape((4, 1))
+            geom_name = i + 5
+            geom_xpos_added = np.concatenate([physics.named.data.geom_xpos[geom_name], np.array([1])]).reshape((4, 1))
             cam_pos_all[i] = cam_matrix.dot(cam.dot(geom_xpos_added)[:3])
 
         # cam_pos_xy=cam_pos_all[5:,:]
         cam_pos_xy = np.rint(cam_pos_all[:, :2].reshape((81, 2)) / cam_pos_all[:, 2])
         cam_pos_xy = cam_pos_xy.astype(int)
-        cam_pos_xy[:, 1] = W - cam_pos_xy[:, 1]
 
-        # hyperparameter epsilon=3(selecting 3 nearest joint) and select the point
+        # move origin to top left corner with +y oriented downward
+        # move origin to bottom left corner?
+        #cam_pos_xy[:, 1] = W - cam_pos_xy[:, 1]
+        cam_pos_xy[:, [0, 1]] = cam_pos_xy[:, [1, 0]]
+
+        # select closest geom to pick point in camera coordinate frame
+        # hyperparameter epsilon=3(selecting 3 nearest joint)
         epsilon = 3
         possible_index = []
         possible_z = []
         for i in range(81):
-            # flipping the x and y to make sure it corresponds to the real location
-            if abs(cam_pos_xy[i][0] - pick_location[1]) < epsilon and abs(
-                    cam_pos_xy[i][1] - pick_location[0]) < epsilon:
+            if abs(cam_pos_xy[i][1] - pick_location[1]) < epsilon \
+                and abs(cam_pos_xy[i][0] - pick_location[0]) < epsilon:
                 possible_index.append(i)
                 possible_z.append(physics.data.geom_xpos[i, 2])
 
@@ -274,7 +278,7 @@ class Cloth(base.Task):
             loop = 0
             while np.linalg.norm(dist) > 0.025:
                 loop += 1
-                if loop > 40:
+                if loop > 80:
                     break
                 physics.named.data.xfrc_applied[corner_action, :3] = dist * 20
                 physics.step()

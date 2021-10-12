@@ -88,7 +88,6 @@ class Rope(base.Task):
         self._n_geoms = 25
         self._use_dr = use_dr
         self._per_traj = per_traj
-        self.num_loc = 1 # TODO: unsure
 
         super(Rope, self).__init__(random=random)
 
@@ -249,6 +248,10 @@ class Rope(base.Task):
             mask = self.segment_image(image)
             self.image = image
 
+            if not mask.any():
+                mask = np.eye(image.shape[0])
+
+            # TODO: rm this
             location_range = np.transpose(np.where(mask))
             self.location_range = location_range
             num_loc = np.shape(location_range)[0]
@@ -270,18 +273,23 @@ class Rope(base.Task):
 
         return obs
 
-    def sample_location(self, physics) -> np.ndarray or None:
+    def sample_location(self, physics) -> np.ndarray:
         """Returns a random pixel location(s)."""
         image = self.get_image(physics)
         self.image = image
 
         mask = self.segment_image(image)
+        if not mask.any():
+            print(f"WARN: empty mask!")
+            # TODO: rm location range member
+            self.location_range = np.array([])
+            self.num_loc = 1
+            return np.array([-1, -1])
+
         location_range = np.transpose(np.where(mask))
         self.location_range = location_range
         num_loc = np.shape(location_range)[0]
         self.num_loc = num_loc
-        if num_loc == 0:
-            return None
         index = np.random.randint(num_loc, size=1)
         location = location_range[index][0]
 
@@ -298,9 +306,17 @@ class Rope(base.Task):
     def segment_image(self, image: np.ndarray) -> np.ndarray:
         return np.all(image > 150, axis=2)
 
+    def segment_cylinder(self, image: np.ndarray) -> np.ndarray:
+        return np.all(image > 150, axis=2)
+
     def get_reward(self, physics) -> float:
         reward_mask = self.segment_image(self.image).astype(int)
         line = np.linspace(0, 31, num=32) * (-0.5)
         column = np.concatenate([np.flip(line), line])
         reward = np.sum(reward_mask * np.exp(column).reshape((W, 1))) / 111.0
-        return reward
+        mask = reward_mask
+        cyl_reward = 0
+        dilated_cyl_mask = self.segment_cylinder(self.image)
+        # dilate the mask
+        # compute radial reward
+        return reward + cyl_reward

@@ -182,18 +182,19 @@ class Rope(base.Task):
         physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
         physics.named.data.qfrc_applied[:2] = 0
 
+        if self._use_dr and not self._per_traj:
+            self.apply_dr(physics)
+
         assert action.shape[0] == _FIXED_ACTION_DIMS
         d =_FIXED_ACTION_DIMS // 2
         if not self._random_pick:
             pick_location = (action[:2] * 0.5 + 0.5) * (W - 1)
+            pick_location = np.round(pick_location).astype('int32')
         else:
             pick_location = self.current_loc
 
         goal_position = action[d:d + 2]
         goal_position = goal_position * 0.075
-
-        if self._use_dr and not self._per_traj:
-            self.apply_dr(physics)
 
         # computing the mapping from geom_xpos to location in image
         cam_fovy = physics.named.model.cam_fovy['fixed']
@@ -210,12 +211,18 @@ class Rope(base.Task):
 
         cam_pos_xy = np.rint(cam_pos_all[:, :2].reshape((self._n_geoms, 2)) / cam_pos_all[:, 2])
         cam_pos_xy = cam_pos_xy.astype(int)
+
+        # move origin to top left corner with +y oriented downward
+        # move origin to bottom left corner?
         cam_pos_xy[:, 1] = W - cam_pos_xy[:, 1]
         cam_pos_xy[:, [0, 1]] = cam_pos_xy[:, [1, 0]]
 
+        # select geom index closest to pick point in camera coordinate frame
         dists = np.linalg.norm(cam_pos_xy - pick_location[None, :], axis=1)
         index = np.argmin(dists)
 
+        # corner_action: geom index on which to SET cartesian force (xy)
+        # corner_geom: geom index from which to READ cartesian position (xy)
         if True:
             corner_action = 'B{}'.format(index)
             corner_geom = 'G{}'.format(index)
@@ -226,11 +233,14 @@ class Rope(base.Task):
             loop = 0
             while np.linalg.norm(dist) > 0.025:
                 loop += 1
-                if loop > 40:
+                if loop > 80:
                     break
                 physics.named.data.xfrc_applied[corner_action, :2] = dist * 30
                 physics.step()
                 self.after_step(physics)
+                # clear perturbation force buffers
+                physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
+                physics.named.data.qfrc_applied[:2] = 0
                 dist = position - physics.named.data.geom_xpos[corner_geom, :2]
 
     def get_termination(self, physics):
@@ -248,6 +258,10 @@ class Rope(base.Task):
             mask = self.segment_image(image)
             self.image = image
 
+            if not mask.any():
+                mask = np.eye(image.shape[0])
+
+            # TODO: rm this
             location_range = np.transpose(np.where(mask))
             self.location_range = location_range
             num_loc = np.shape(location_range)[0]
@@ -273,6 +287,7 @@ class Rope(base.Task):
         image = self.get_image(physics)
         self.image = image
 
+        # TODO: handle empty mask as in rope_cyl.py
         mask = self.segment_image(image)
         location_range = np.transpose(np.where(mask))
         self.location_range = location_range
