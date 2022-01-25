@@ -215,12 +215,11 @@ class Cloth(base.Task):
 
         # clear previous xfrc_force
         physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
-        #physics.named.data.qfrc_applied[:3] = 0
 
         if self._use_dr and not self._per_traj:
             self.apply_dr(physics)
 
-        # scale the position to be a normal range
+        # scale the position to normal range and upscale to image size
         assert action.shape[0] == _FIXED_ACTION_DIMS
         d =_FIXED_ACTION_DIMS // 2
         if not self._random_pick:
@@ -232,53 +231,57 @@ class Cloth(base.Task):
         goal_position = action[d:d + 3]
         goal_position = goal_position * 0.1
 
-        # computing the mapping from geom_xpos to location in image
+        # project cloth points into image
         cam_fovy = physics.named.model.cam_fovy['fixed']
         f = 0.5 * W / math.tan(cam_fovy * math.pi / 360)
         cam_matrix = np.array([[f, 0, W / 2], [0, f, W / 2], [0, 0, 1]])
         cam_mat = physics.named.data.cam_xmat['fixed'].reshape((3, 3))
         cam_pos = physics.named.data.cam_xpos['fixed'].reshape((3, 1))
         cam = np.concatenate([cam_mat, cam_pos], axis=1)
-        cam_pos_all = np.zeros((81, 3, 1)) # assuming 9x9 geom mesh
+        geoms_in_cam = np.zeros((81, 3, 1)) # assuming 9x9 geom mesh
         for i in range(81):
             geom_name = i + 5
-            geom_xpos_added = np.concatenate([physics.named.data.geom_xpos[geom_name], np.array([1])]).reshape((4, 1))
-            cam_pos_all[i] = cam_matrix.dot(cam.dot(geom_xpos_added)[:3])
+            geoms_in_world = np.concatenate([physics.named.data.geom_xpos[geom_name], np.array([1])]).reshape((4, 1))
+            geoms_in_cam[i] = cam_matrix.dot(cam.dot(geoms_in_world)[:3])
 
-        # cam_pos_xy=cam_pos_all[5:,:]
-        cam_pos_xy = np.rint(cam_pos_all[:, :2].reshape((81, 2)) / cam_pos_all[:, 2])
-        cam_pos_xy = cam_pos_xy.astype(int)
+        # cam_pos_xy=geoms_in_cam[5:,:]
+        geoms_uv = np.rint(geoms_in_cam[:, :2].reshape((81, 2)) / geoms_in_cam[:, 2])
+        geoms_uv = geoms_uv.astype(int)
 
         # move origin to top left corner with +y oriented downward
         # move origin to bottom left corner?
-        #cam_pos_xy[:, 1] = W - cam_pos_xy[:, 1]
-        cam_pos_xy[:, [0, 1]] = cam_pos_xy[:, [1, 0]]
+        geoms_uv[:, 1] = W - geoms_uv[:, 1]
+        geoms_uv[:, [0, 1]] = geoms_uv[:, [1, 0]]
 
-        # select closest geom to pick point in camera coordinate frame
-        # hyperparameter epsilon=3(selecting 3 nearest joint)
-        epsilon = 3
+        # select closest geom point projection to pick point in image space
+        # hyperparameter epsilon=3(selecting joint in (2*eps)^2 box around pick pel)
+        epsilon = 2
         possible_index = []
         possible_z = []
         for i in range(81):
-            if abs(cam_pos_xy[i][1] - pick_location[1]) < epsilon \
-                and abs(cam_pos_xy[i][0] - pick_location[0]) < epsilon:
+            du = abs(geoms_uv[i][0] - pick_location[0])
+            dv = abs(geoms_uv[i][1] - pick_location[1])
+            if du < epsilon and dv < epsilon:
                 possible_index.append(i)
                 possible_z.append(physics.data.geom_xpos[i, 2])
 
         if possible_index != []:
             index = possible_index[possible_z.index(max(possible_z))]
 
-            corner_action = index + 1
+            corner_action = index + 1      # TODO: what is the role of corner_*?
             corner_geom = index + 5
 
             # apply consecutive force to move the point to the target position
+                                           # TODO: why offset goal position?
             position = goal_position + physics.named.data.geom_xpos[corner_geom]
+            #position = goal_position
             dist = position - physics.named.data.geom_xpos[corner_geom]
+
 
             loop = 0
             while np.linalg.norm(dist) > 0.025:
                 loop += 1
-                if loop > 80:
+                if loop > 40:
                     break
                 physics.named.data.xfrc_applied[corner_action, :3] = dist * 20
                 physics.step()
@@ -331,8 +334,9 @@ class Cloth(base.Task):
             return np.array([-1, -1])
         else:
             index = np.random.randint(num_loc)
-            location = location_range[index]
-            return location
+            pick_location = location_range[index]
+
+        return pick_location
 
     def get_reward(self, physics) -> float:
         current_mask = self.segment_image(self.image).astype(int)

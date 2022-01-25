@@ -92,6 +92,7 @@ class Cloth(base.Task):
         self._texture_randomization = texture_randomization
         self._per_traj = per_traj
 
+        self.current_loc = np.array([-1, 1])
         super(Cloth, self).__init__(random=random)
 
     def action_spec(self, physics) -> specs.BoundedArray:
@@ -128,11 +129,13 @@ class Cloth(base.Task):
             self.light_dir = np.array([0, 0, -1])
             self.light_pos = np.array([0, 0, 1])
 
+            # This offset is required to match the dims of the params from physics.named.model
+            offset = 1
             self.dof_damping = np.concatenate([np.zeros((6)), np.ones((160)) * 0.002], axis=0)
-            self.body_mass = np.concatenate([np.zeros(1), np.ones(81) * 0.00309])
+            self.body_mass = np.concatenate([np.zeros(1), np.ones(81 + offset) * 0.00309])
             self.body_inertia = np.concatenate(
-                [np.zeros((1, 3)), np.tile(np.array([[2.32e-07, 2.32e-07, 4.64e-07]]), (81, 1))], axis=0)
-            self.geom_friction = np.tile(np.array([[1, 0.005, 0.001]]), (86, 1))
+                [np.zeros((1, 3)), np.tile(np.array([[2.32e-07, 2.32e-07, 4.64e-07]]), (81 + offset, 1))], axis=0)
+            self.geom_friction = np.tile(np.array([[1, 0.005, 0.001]]), (86 + offset, 1))
 
             self.apply_dr(physics)
 
@@ -142,9 +145,8 @@ class Cloth(base.Task):
         super(Cloth, self).initialize_episode(physics)
 
     def apply_dr(self, physics) -> None:
-        if self._use_dr:
-            if self._texture_randomization:
-                physics.named.model.mat_texid[15] = np.random.choice(3, 1) + 9
+        if self._texture_randomization:
+            physics.named.model.mat_texid[15] = np.random.choice(3, 1) + 9
 
             ### visual randomization
 
@@ -218,10 +220,10 @@ class Cloth(base.Task):
         # clear previous xfrc_force
         physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
 
-        if not self._per_traj:
+        if self._use_dr and not self._per_traj:
             self.apply_dr(physics)
 
-        # scale the position to be a normal range
+        # scale the position to normal range and upscale to image size
         assert action.shape[0] == _FIXED_ACTION_DIMS
         d =_FIXED_ACTION_DIMS // 2
         if not self._random_pick:
@@ -233,31 +235,37 @@ class Cloth(base.Task):
         goal_position = action[d:d + 3]
         goal_position = goal_position * 0.1
 
-        # computing the mapping from geom_xpos to location in image
-        cam_fovy = physics.model.cam_fovy[0]
+        # project cloth points into image
+        cam_fovy = physics.named.model.cam_fovy['fixed']
         f = 0.5 * W / math.tan(cam_fovy * math.pi / 360)
         cam_matrix = np.array([[f, 0, W / 2], [0, f, W / 2], [0, 0, 1]])
-        cam_mat = physics.data.cam_xmat[0].reshape((3, 3))
-        cam_pos = physics.data.cam_xpos[0].reshape((3, 1))
+        cam_mat = physics.named.data.cam_xmat['fixed'].reshape((3, 3))
+        cam_pos = physics.named.data.cam_xpos['fixed'].reshape((3, 1))
         cam = np.concatenate([cam_mat, cam_pos], axis=1)
-        cam_pos_all = np.zeros((81, 3, 1))
+        geoms_in_cam = np.zeros((81, 3, 1)) # assuming 9x9 geom mesh
         for i in range(81):
-            geom_xpos_added = np.concatenate([physics.data.geom_xpos[i+5], np.array([1])]).reshape((4, 1))
-            cam_pos_all[i] = cam_matrix.dot(cam.dot(geom_xpos_added)[:3])
+            geom_name = i + 5
+            geoms_in_world = np.concatenate([physics.named.data.geom_xpos[geom_name], np.array([1])]).reshape((4, 1))
+            geoms_in_cam[i] = cam_matrix.dot(cam.dot(geoms_in_world)[:3])
 
-        # cam_pos_xy=cam_pos_all[5:,:]
-        cam_pos_xy = np.rint(cam_pos_all[:, :2].reshape((81, 2)) / cam_pos_all[:, 2])
-        cam_pos_xy = cam_pos_xy.astype(int)
-        cam_pos_xy[:, 1] = W - cam_pos_xy[:, 1]
+        # cam_pos_xy=geoms_in_cam[5:,:]
+        geoms_uv = np.rint(geoms_in_cam[:, :2].reshape((81, 2)) / geoms_in_cam[:, 2])
+        geoms_uv = geoms_uv.astype(int)
 
-        # hyperparameter epsilon=3(selecting 3 nearest joint) and select the point
-        epsilon = 3
+        # move origin to top left corner with +y oriented downward
+        # move origin to bottom left corner?
+        geoms_uv[:, 1] = W - geoms_uv[:, 1]
+        geoms_uv[:, [0, 1]] = geoms_uv[:, [1, 0]]
+
+        # select closest geom point projection to pick point in image space
+        # hyperparameter epsilon=3(selecting joint in (2*eps)^2 box around pick pel)
+        epsilon = 2
         possible_index = []
         possible_z = []
         for i in range(81):
-            # flipping the x and y to make sure it corresponds to the real location
-            if abs(cam_pos_xy[i][0] - pick_location[1]) < epsilon and abs(
-                    cam_pos_xy[i][1] - pick_location[0]) < epsilon:
+            du = abs(geoms_uv[i][0] - pick_location[0])
+            dv = abs(geoms_uv[i][1] - pick_location[1])
+            if du < epsilon and dv < epsilon:
                 possible_index.append(i)
                 possible_z.append(physics.data.geom_xpos[i, 2])
 
@@ -324,7 +332,7 @@ class Cloth(base.Task):
         location_range = np.transpose(np.where(self.segment_image(image)))
         num_loc = np.shape(location_range)[0]
         if num_loc == 0:
-            pick_location = np.array([-1, -1])
+            return np.array([-1, -1])
         else:
             index = np.random.randint(num_loc)
             pick_location = location_range[index]

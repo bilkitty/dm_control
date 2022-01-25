@@ -38,7 +38,7 @@
          <camera name="track" mode="trackcom" pos="0 -1 1" xyaxes="1 0 0 0 1 1" />
         <freejoint name="r1"/>
         <composite type="rope" count="25 1 1" spacing="0.02" offset="0 0 2">
-            <joint kind="main" damping="0.005"/>
+            <joint kind="main" damping="0.002"/>
             <geom type="capsule" size=".008 .01" rgba=" 1 0.871 0.678 1"/>
         </composite>
     </body>

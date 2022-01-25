@@ -105,12 +105,15 @@ class Rope(base.Task):
 
     def initialize_episode(self, physics) -> None:
         if self._use_dr:
+            # This offset is required to match the dims of the params from physics.named.model
+            offset = 0
             self.dof_damping = np.concatenate([np.zeros((6)), np.ones(2 * (self._n_geoms - 1)) * 0.002], axis=0)
-            self.body_mass = np.concatenate([np.zeros(1), np.ones(self._n_geoms) * 0.00563])
+            self.body_mass = np.concatenate([np.zeros(1), np.ones(self._n_geoms + offset) * 0.00563])
             self.body_inertia = np.concatenate(
-                [np.zeros((1, 3)), np.tile(np.array([[4.58e-07, 4.58e-07, 1.8e-07]]), (self._n_geoms, 1))],
+                [np.zeros((1, 3)), np.tile(np.array([[4.58e-07, 4.58e-07, 1.8e-07]]), (self._n_geoms + offset, 1))],
                 axis=0)
-            self.geom_friction = np.tile(np.array([[1, 0.005, 0.001]]), (self._n_geoms + 5, 1))
+
+            self.geom_friction = np.tile(np.array([[1, 0.005, 0.001]]), (self._n_geoms + 5 + offset, 1))
             self.cam_pos = np.array([0, 0, 0.75])
             self.cam_quat = np.array([1, 0, 0, 0])
 
@@ -177,23 +180,23 @@ class Rope(base.Task):
 
         physics.named.model.body_mass[1:] = np.random.uniform(-0.0005, 0.0005) + body_mass[1:]
 
-
-    def before_step(self, action : np.ndarray, physics) -> None:
+    def before_step(self, action, physics):
         physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
         physics.named.data.qfrc_applied[:2] = 0
+
+        if self._use_dr and not self._per_traj:
+            self.apply_dr(physics)
 
         assert action.shape[0] == _FIXED_ACTION_DIMS
         d =_FIXED_ACTION_DIMS // 2
         if not self._random_pick:
             pick_location = (action[:2] * 0.5 + 0.5) * (W - 1)
+            pick_location = np.round(pick_location).astype('int32')
         else:
             pick_location = self.current_loc
 
         goal_position = action[d:d + 2]
         goal_position = goal_position * 0.075
-
-        if self._use_dr and not self._per_traj:
-            self.apply_dr(physics)
 
         # computing the mapping from geom_xpos to location in image
         cam_fovy = physics.named.model.cam_fovy['fixed']
@@ -202,21 +205,29 @@ class Rope(base.Task):
         cam_mat = physics.named.data.cam_xmat['fixed'].reshape((3, 3))
         cam_pos = physics.named.data.cam_xpos['fixed'].reshape((3, 1))
         cam = np.concatenate([cam_mat, cam_pos], axis=1)
-        cam_pos_all = np.zeros((self._n_geoms, 3, 1))
+        geoms_in_cam = np.zeros((self._n_geoms, 3, 1)) # assuming 25x1 geom chain
         for i in range(self._n_geoms):
             geom_name = 'G{}'.format(i)
-            geom_xpos_added = np.concatenate([physics.named.data.geom_xpos[geom_name], np.array([1])]).reshape((4, 1))
-            cam_pos_all[i] = cam_matrix.dot(cam.dot(geom_xpos_added)[:3])
+            geoms_in_world = np.concatenate([physics.named.data.geom_xpos[geom_name], np.array([1])]).reshape((4, 1))
+            geoms_in_cam[i] = cam_matrix.dot(cam.dot(geoms_in_world)[:3])
 
-        cam_pos_xy = np.rint(cam_pos_all[:, :2].reshape((self._n_geoms, 2)) / cam_pos_all[:, 2])
-        cam_pos_xy = cam_pos_xy.astype(int)
-        cam_pos_xy[:, 1] = W - cam_pos_xy[:, 1]
-        cam_pos_xy[:, [0, 1]] = cam_pos_xy[:, [1, 0]]
+        geoms_uv = np.rint(geoms_in_cam[:, :2].reshape((self._n_geoms, 2)) / geoms_in_cam[:, 2])
+        geoms_uv = geoms_uv.astype(int)
 
-        dists = np.linalg.norm(cam_pos_xy - pick_location[None, :], axis=1)
+        # move origin to top left corner with +y oriented downward
+        # move origin to bottom left corner?
+        geoms_uv[:, 1] = W - geoms_uv[:, 1]
+        geoms_uv[:, [0, 1]] = geoms_uv[:, [1, 0]]
+
+        # select geom point projection to pick point in image space
+        # hyperparameter epsilon=1(selecting joint in (2*eps)^2 box around pick pel)
+        epsilon = 2
+        dists = np.linalg.norm(geoms_uv - pick_location[None, :], ord=1, axis=1)
         index = np.argmin(dists)
 
-        if True:
+        # corner_action: geom index on which to SET cartesian force (xy)
+        # corner_geom: geom index from which to READ cartesian position (xy)
+        if dists[index] < epsilon:
             corner_action = 'B{}'.format(index)
             corner_geom = 'G{}'.format(index)
 
@@ -231,6 +242,9 @@ class Rope(base.Task):
                 physics.named.data.xfrc_applied[corner_action, :2] = dist * 30
                 physics.step()
                 self.after_step(physics)
+                # clear perturbation force buffers
+                physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
+                physics.named.data.qfrc_applied[:2] = 0
                 dist = position - physics.named.data.geom_xpos[corner_geom, :2]
 
     def get_termination(self, physics) -> float or None:
@@ -290,6 +304,8 @@ class Rope(base.Task):
         self.location_range = location_range
         num_loc = np.shape(location_range)[0]
         self.num_loc = num_loc
+        if num_loc == 0:
+            return None
         index = np.random.randint(num_loc, size=1)
         location = location_range[index][0]
 

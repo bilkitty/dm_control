@@ -177,7 +177,6 @@ class Rope(base.Task):
 
         physics.named.model.body_mass[1:] = np.random.uniform(-0.0005, 0.0005) + body_mass[1:]
 
-
     def before_step(self, action, physics):
         physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
         physics.named.data.qfrc_applied[:2] = 0
@@ -203,27 +202,29 @@ class Rope(base.Task):
         cam_mat = physics.named.data.cam_xmat['fixed'].reshape((3, 3))
         cam_pos = physics.named.data.cam_xpos['fixed'].reshape((3, 1))
         cam = np.concatenate([cam_mat, cam_pos], axis=1)
-        cam_pos_all = np.zeros((self._n_geoms, 3, 1))
+        geoms_in_cam = np.zeros((self._n_geoms, 3, 1)) # assuming 25x1 geom chain
         for i in range(self._n_geoms):
             geom_name = 'G{}'.format(i)
-            geom_xpos_added = np.concatenate([physics.named.data.geom_xpos[geom_name], np.array([1])]).reshape((4, 1))
-            cam_pos_all[i] = cam_matrix.dot(cam.dot(geom_xpos_added)[:3])
+            geoms_in_world = np.concatenate([physics.named.data.geom_xpos[geom_name], np.array([1])]).reshape((4, 1))
+            geoms_in_cam[i] = cam_matrix.dot(cam.dot(geoms_in_world)[:3])
 
-        cam_pos_xy = np.rint(cam_pos_all[:, :2].reshape((self._n_geoms, 2)) / cam_pos_all[:, 2])
-        cam_pos_xy = cam_pos_xy.astype(int)
+        geoms_uv = np.rint(geoms_in_cam[:, :2].reshape((self._n_geoms, 2)) / geoms_in_cam[:, 2])
+        geoms_uv = geoms_uv.astype(int)
 
         # move origin to top left corner with +y oriented downward
         # move origin to bottom left corner?
-        cam_pos_xy[:, 1] = W - cam_pos_xy[:, 1]
-        cam_pos_xy[:, [0, 1]] = cam_pos_xy[:, [1, 0]]
+        geoms_uv[:, 1] = W - geoms_uv[:, 1]
+        geoms_uv[:, [0, 1]] = geoms_uv[:, [1, 0]]
 
-        # select geom index closest to pick point in camera coordinate frame
-        dists = np.linalg.norm(cam_pos_xy - pick_location[None, :], axis=1)
+        # select geom point projection to pick point in image space
+        # hyperparameter epsilon=1(selecting joint in (2*eps)^2 box around pick pel)
+        epsilon = 2
+        dists = np.linalg.norm(geoms_uv - pick_location[None, :], ord=1, axis=1)
         index = np.argmin(dists)
 
         # corner_action: geom index on which to SET cartesian force (xy)
         # corner_geom: geom index from which to READ cartesian position (xy)
-        if True:
+        if dists[index] < epsilon:
             corner_action = 'B{}'.format(index)
             corner_geom = 'G{}'.format(index)
 
@@ -233,7 +234,7 @@ class Rope(base.Task):
             loop = 0
             while np.linalg.norm(dist) > 0.025:
                 loop += 1
-                if loop > 80:
+                if loop > 40:
                     break
                 physics.named.data.xfrc_applied[corner_action, :2] = dist * 30
                 physics.step()
@@ -283,12 +284,19 @@ class Rope(base.Task):
 
         return obs
 
-    def sample_location(self, physics):
+    def sample_location(self, physics) -> np.ndarray:
+        """Returns a random pixel location(s)."""
         image = self.get_image(physics)
         self.image = image
 
-        # TODO: handle empty mask as in rope_cyl.py
         mask = self.segment_image(image)
+        if not mask.any():
+            print(f"WARN: empty mask!")
+            # TODO: rm location range member
+            self.location_range = np.array([])
+            self.num_loc = 1
+            return np.array([-1, -1])
+
         location_range = np.transpose(np.where(mask))
         self.location_range = location_range
         num_loc = np.shape(location_range)[0]
