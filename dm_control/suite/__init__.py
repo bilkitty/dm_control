@@ -48,6 +48,8 @@ from dm_control.suite import rope_dr
 from dm_control.suite import cloth_dr
 from dm_control.suite import rope_cyl
 from dm_control.suite import cloth_cyl
+from dm_control.suite import cloth_prop
+from dm_control.suite import cloth_manipulator
 
 # Find all domains imported.
 _DOMAINS = {name: module for name, module in locals().items()
