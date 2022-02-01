@@ -1,13 +1,17 @@
 # Environments
 
-All environments are in dm_control/suite. In order to run these environments, you may need to change the path of the cloth skin images in the xml files
+Note: some texture filepaths in xml files need to be mapped to local filesystem. 
 
-Cloth (State): cloth_point_state.py / cloth_point.xml
+For linux systems, try:
+>$ cd <PATH_TO_DM_CONTROL_SUITE>
+> 
+>$ sed -i 's/<ABS_PATH_TO_DM_CONTROL>/\/home\/<USER_NAME>\/<PATH_TO_DM_CONTROL_REPO>/g' *.xml
 
-Cloth (Pixel): cloth_point.py / cloth_point.xml
+e.g.,
 
-Cloth Simplified (State): cloth_corner.py / clother_corner.xml
+>$ cd /home/charlie/git_repos/dm_control/dm_control/suite
+> 
+>$ sed -i 's/<ABS_PATH_TO_DM_CONTROL>/\/home\/charlie\/git_repos\/dm_control/g' *.xml
+> 
+>$ eog /home/charlie/git_repos/dm_control/dm_control/suite/blue.png
 
-Rope (State): rope_v2.py / rope_v2.xml
-
-Rope (Pixel): rope_sac.py / rope_sac.xml

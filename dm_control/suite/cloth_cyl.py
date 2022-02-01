@@ -54,7 +54,7 @@ SUITE = containers.TaggedTasks()
 
 def get_model_and_assets():
     """Returns a tuple containing the model XML string and a dict of assets."""
-    return common.read_model('cloth_cyl_v3.xml'), common.ASSETS
+    return common.read_model('cloth_cyl.xml'), common.ASSETS
 
 
 @SUITE.add('hard')
