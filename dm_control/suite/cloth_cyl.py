@@ -244,7 +244,7 @@ class Cloth(base.Task):
         cam = np.concatenate([cam_mat, cam_pos], axis=1)
         geoms_in_cam = np.zeros((81, 3, 1)) # assuming 9x9 geom mesh
         for i in range(81):
-            geom_name = i + 5
+            geom_name = i + 5             # exclude wall elements in xml
             geoms_in_world = np.concatenate([physics.named.data.geom_xpos[geom_name], np.array([1])]).reshape((4, 1))
             geoms_in_cam[i] = cam_matrix.dot(cam.dot(geoms_in_world)[:3])
 
@@ -273,11 +273,11 @@ class Cloth(base.Task):
             index = possible_index[possible_z.index(max(possible_z))]
 
             corner_action = index + 1
-            corner_geom = index + 5
+            corner_geom = index + 5         # exclude wall elements
 
             # apply consecutive force to move the point to the target position
-            position = goal_position + physics.named.data.geom_xpos[corner_geom]
-            dist = position - physics.named.data.geom_xpos[corner_geom]
+            target_xpos = goal_position + physics.named.data.geom_xpos[corner_geom]
+            dist = target_xpos - physics.named.data.geom_xpos[corner_geom]
 
             loop = 0
             while np.linalg.norm(dist) > 0.025:
@@ -287,7 +287,7 @@ class Cloth(base.Task):
                 physics.named.data.xfrc_applied[corner_action, :3] = dist * 20
                 physics.step()
                 self.after_step(physics)
-                dist = position - physics.named.data.geom_xpos[corner_geom]
+                dist = target_xpos - physics.named.data.geom_xpos[corner_geom]
 
     def get_observation(self, physics) -> dict:
         """Returns either features or only sensors (to be used with pixels)."""

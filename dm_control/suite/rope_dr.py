@@ -228,8 +228,8 @@ class Rope(base.Task):
             corner_action = 'B{}'.format(index)
             corner_geom = 'G{}'.format(index)
 
-            position = goal_position + physics.named.data.geom_xpos[corner_geom, :2]
-            dist = position - physics.named.data.geom_xpos[corner_geom, :2]
+            target_xpos = goal_position + physics.named.data.geom_xpos[corner_geom, :2]
+            dist = target_xpos - physics.named.data.geom_xpos[corner_geom, :2]
 
             loop = 0
             while np.linalg.norm(dist) > 0.025:
@@ -242,7 +242,7 @@ class Rope(base.Task):
                 # clear perturbation force buffers
                 physics.named.data.xfrc_applied[:, :3] = np.zeros((3,))
                 physics.named.data.qfrc_applied[:2] = 0
-                dist = position - physics.named.data.geom_xpos[corner_geom, :2]
+                dist = target_xpos - physics.named.data.geom_xpos[corner_geom, :2]
 
     def get_termination(self, physics):
         if self.num_loc < 1:

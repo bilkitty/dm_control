@@ -268,15 +268,12 @@ class Cloth(base.Task):
         if possible_index != []:
             index = possible_index[possible_z.index(max(possible_z))]
 
-            corner_action = index + 1      # TODO: what is the role of corner_*?
+            corner_action = index + 1
             corner_geom = index + 5
 
             # apply consecutive force to move the point to the target position
-                                           # TODO: why offset goal position?
-            position = goal_position + physics.named.data.geom_xpos[corner_geom]
-            #position = goal_position
-            dist = position - physics.named.data.geom_xpos[corner_geom]
-
+            target_xpos = goal_position + physics.named.data.geom_xpos[corner_geom]
+            dist = target_xpos - physics.named.data.geom_xpos[corner_geom]
 
             loop = 0
             while np.linalg.norm(dist) > 0.025:
@@ -286,7 +283,7 @@ class Cloth(base.Task):
                 physics.named.data.xfrc_applied[corner_action, :3] = dist * 20
                 physics.step()
                 self.after_step(physics)
-                dist = position - physics.named.data.geom_xpos[corner_geom]
+                dist = target_xpos - physics.named.data.geom_xpos[corner_geom]
 
     def get_observation(self, physics) -> dict:
         """Returns either features or only sensors (to be used with pixels)."""
