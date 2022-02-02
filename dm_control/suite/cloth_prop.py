@@ -44,6 +44,8 @@ _CONTROL_TIMESTEP = .02  # (Seconds)
 _TIME_LIMIT = 30  # (Seconds)
 _FIXED_ACTION_DIMS = 6
 _ALL_PROPS = frozenset(["block", "ball"])
+_COVERAGE_TYPE = ['none', 'parital', 'full']
+_CLOTH_MODEL_NAME = 'B4_4'
 
 CORNER_INDEX_ACTION = ['B0_0', 'B0_8', 'B8_0', 'B8_8']
 CORNER_INDEX_GEOM = ['G0_0', 'G0_8', 'G8_0', 'G8_8']
@@ -52,9 +54,9 @@ W = 64
 SUITE = containers.TaggedTasks()
 
 
-def make_model(prop_name=""):
+def make_model(prop_name):
   """Returns a tuple containing the model XML string and a dict of assets."""
-  xml_string = common.read_model('cloth_block.xml')
+  xml_string = common.read_model('cloth_prop.xml')
   parser = etree.XMLParser(remove_blank_text=True)
   mjcf = etree.XML(xml_string, parser)
 
@@ -76,17 +78,29 @@ def make_model(prop_name=""):
   return etree.tostring(mjcf, pretty_print=True), common.ASSETS
 
 @SUITE.add('hard')
-def hard(time_limit=_TIME_LIMIT, random=None, environment_kwargs=None, **kwargs):
-    """Returns stacker task with 2 boxes."""
+def hard(time_limit=_TIME_LIMIT, random=None, prop_name=None, coverage_type='full', environment_kwargs=None, **kwargs):
+    """Returns cloth with at most one prop."""
 
-    if "prop_name" in environment_kwargs.keys():
-        physics = Physics.from_xml_string(*make_model(environment_kwargs["prop_name"]))
-    else:
-        physics = Physics.from_xml_string(*make_model())
-    kwargs["prop_name"] = environment_kwargs["prop_name"]
     task = Cloth(randomize_gains=False, random=random, **kwargs)
-    # hack: refresh env kwargs
-    environment_kwargs = {}
+    physics = Physics.from_xml_string(*make_model(prop_name or ''))
+
+    # optionally offset prop
+    # note: assume cloth/prop in xml are in full coverage configuration by default
+    if coverage_type == 'partial':
+        object_x = physics.named.data.site_xpos[prop_name, 'x']
+        object_z = physics.named.data.site_xpos[prop_name, 'z']
+        object_x_offset = object_x + max(0.5 * np.random.rand(), 0.1)
+        object_z_offset = object_z + 0.1 * np.random.rand()
+        physics.named.model.body_pos[prop_name, ['x', 'z']] = object_x_offset, object_z_offset
+    elif coverage_type == 'none':
+        # place cloth underneath prop
+        physics.named.model.body_pos[prop_name, ['z']] = 0.21
+        physics.named.model.body_pos[_CLOTH_MODEL_NAME, ['z']] = 0
+    else:
+        if coverage_type != 'full':
+            assert False, f"unkown coverage type"
+
+    environment_kwargs = environment_kwargs or {}
     return control.Environment(
         physics, task, control_timestep=_CONTROL_TIMESTEP, special_task=True, time_limit=time_limit,
         **environment_kwargs)
@@ -161,15 +175,7 @@ class Cloth(base.Task):
             self.apply_dr(physics)
 
         if not self._init_flat:
-            # DONE: create overlap between prop and cloth, see xml
-            # TODO: randomly move object from underneath cloth
             physics.after_reset()
-            #object_x = physics.named.data.site_xpos[self._prop_name, 'x']
-            #object_z = physics.named.data.site_xpos[self._prop_name, 'z']
-            #object_z_offset = object_z + 1
-            #physics.named.data.geom_xpos['G3_4'] = object_x, object_z_offset, 0
-            #physics.named.data.geom_xpos['G4_4'] = object_x, object_z_offset, 0
-
             physics.named.data.xfrc_applied[CORNER_INDEX_ACTION, :3] = np.random.uniform(-.3, .3, size=3)
 
         super(Cloth, self).initialize_episode(physics)
