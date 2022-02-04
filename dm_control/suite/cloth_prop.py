@@ -89,7 +89,7 @@ def hard(time_limit=_TIME_LIMIT, random=None, prop_name=None, coverage_type='ful
     if coverage_type == 'partial':
         object_x = physics.named.data.site_xpos[prop_name, 'x']
         object_z = physics.named.data.site_xpos[prop_name, 'z']
-        object_x_offset = object_x + max(0.5 * np.random.rand(), 0.1)
+        object_x_offset = object_x + max(0.4 * np.random.rand(), 0.2)
         object_z_offset = object_z + 0.1 * np.random.rand()
         physics.named.model.body_pos[prop_name, ['x', 'z']] = object_x_offset, object_z_offset
     elif coverage_type == 'none':
@@ -129,6 +129,8 @@ class Cloth(base.Task):
         self._texture_randomization = texture_randomization
         self._per_traj = per_traj
         self._prop_name = prop_name
+        self._color_image = None
+        self._depth_image = None
 
         super(Cloth, self).__init__(random=random)
 
@@ -145,14 +147,10 @@ class Cloth(base.Task):
         physics.named.data.xfrc_applied['B3_4', :3] = np.array([0, 0, -2])
         physics.named.data.xfrc_applied['B4_4', :3] = np.array([0, 0, -2])
 
-
-        render_kwargs = {}
-        render_kwargs['camera_id'] = 0
-        render_kwargs['width'] = W
-        render_kwargs['height'] = W
-        image = physics.render(**render_kwargs)
-        self.image = image
-        self.mask = self.segment_image(image).astype(int)
+        # initialise frames
+        self.capture_color_image(physics)
+        self.capture_depth_image(physics)
+        self.mask = self.segment_image(self._color_image).astype(int)
 
         if self._use_dr:
             # initialize the random parameters
@@ -332,29 +330,40 @@ class Cloth(base.Task):
                 dist = target_xpos - physics.named.data.geom_xpos[corner_geom]
 
     def get_observation(self, physics) -> dict:
-        """Returns either features or only sensors (to be used with pixels)."""
+        """Returns features and depth pixels for use with pixels."""
         obs = collections.OrderedDict()
 
-        image = self.get_image(physics)
-        self.image = image
+        self.capture_color_image(physics)
+        self.capture_depth_image(physics)
+        obs['depth_pixels_mm'] = self._depth_image
         self.current_loc = self.sample_location(physics) if self._random_pick else np.array([-1, 1])
         obs['pick_location'] = np.tile(self.current_loc, 50).reshape(-1).astype('float32') / (W - 1)
 
         # generate random action as unif(0,1) * (hi - lo) + lo
         random_action = np.random.rand(_FIXED_ACTION_DIMS,) * 2 - 1
         random_action[:2] = self.current_loc.astype('float32') / (W - 1)
-        random_action[2] = 0.  # todo: would be nice to use depth data
+        random_action[2] = self._depth_image[self.current_loc[0], self.current_loc[1]]
         obs['action_sample'] = random_action
 
         return obs
 
-    def get_image(self, physics) -> np.ndarray:
+    def capture_color_image(self, physics) -> np.ndarray:
+        """ Returns WxWx3 rgb image """
         render_kwargs = {}
         render_kwargs['camera_id'] = 0
         render_kwargs['width'] = W
         render_kwargs['height'] = W
-        image = physics.render(**render_kwargs)
-        return image
+        render_kwargs['depth'] = False
+        self._color_image = physics.render(**render_kwargs)
+
+    def capture_depth_image(self, physics) -> np.ndarray:
+        """ Returns WxWx1 grey image with depth values in mm """
+        render_kwargs = {}
+        render_kwargs['camera_id'] = 0
+        render_kwargs['width'] = W
+        render_kwargs['height'] = W
+        render_kwargs['depth'] = True
+        self._depth_image = 1000 * physics.render(**render_kwargs).astype('float32')
 
     def segment_image(self, image: np.ndarray) -> np.ndarray:
         image_dim_1 = image[:, :, [1]]
@@ -370,7 +379,8 @@ class Cloth(base.Task):
         return geoms
 
     def sample_location(self, physics) -> np.ndarray:
-        image = self.image
+        """ Returns 2d pixel location that is sampled from the LATEST masked image """
+        image = self._color_image
         location_range = np.transpose(np.where(self.segment_image(image)))
         num_loc = np.shape(location_range)[0]
         if num_loc == 0:
@@ -382,7 +392,7 @@ class Cloth(base.Task):
         return pick_location
 
     def get_reward(self, physics) -> float:
-        current_mask = self.segment_image(self.image).astype(int)
+        current_mask = self.segment_image(self._color_image).astype(int)
         area = np.sum(current_mask * self.mask)
         reward = area / (np.sum(self.mask) + 1)
         return reward
