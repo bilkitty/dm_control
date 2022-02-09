@@ -300,6 +300,8 @@ class Cloth(base.Task):
         random_action[2] = 0.  # todo: would be nice to use depth data
         obs['action_sample'] = random_action
 
+        depth_frame = physics.render(**dict(camera_id=0, width=W, height=W, depth=True))
+        obs['depth_pixels_mm'] = 1000 * depth_frame.astype('float32')
         return obs
 
     def get_image(self, physics) -> np.ndarray:
