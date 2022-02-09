@@ -89,7 +89,7 @@ def hard(time_limit=_TIME_LIMIT, random=None, prop_name=None, coverage_type='ful
     if coverage_type == 'partial':
         object_x = physics.named.data.site_xpos[prop_name, 'x']
         object_z = physics.named.data.site_xpos[prop_name, 'z']
-        object_x_offset = object_x + max(0.4 * np.random.rand(), 0.2)
+        object_x_offset = object_x + max(0.3 * np.random.rand(), 0.15)
         object_z_offset = object_z + 0.1 * np.random.rand()
         physics.named.model.body_pos[prop_name, ['x', 'z']] = object_x_offset, object_z_offset
     elif coverage_type == 'none':
