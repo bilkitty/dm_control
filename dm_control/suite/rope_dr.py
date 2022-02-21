@@ -39,6 +39,7 @@ from imageio import imsave
 
 _DEFAULT_TIME_LIMIT = 20
 _FIXED_ACTION_DIMS = 6
+_HEAVY_SET_SCALE = 3
 SUITE = containers.TaggedTasks()
 
 CORNER_INDEX_ACTION = ['B3', 'B8', 'B10', 'B20']
@@ -47,7 +48,6 @@ GEOM_INDEX = ['G0_0', 'G0_8', 'G8_0', 'G8_8']
 
 def get_model_and_assets():
     """Returns a tuple containing the model XML string and a dict of assets."""
-    # return common.read_model('cloth_v0.xml'), common.ASSETS
     return common.read_model('rope_dr.xml'), common.ASSETS
 
 
@@ -73,7 +73,7 @@ class Rope(base.Task):
     """A point_mass `Task` to reach target with smooth reward."""
 
     def __init__(self, randomize_gains, random=None, random_pick=True, init_flat=False,
-                 use_dr=False, per_traj=False):
+                 use_dr=False, per_traj=False, heavy_set=False):
         """Initialize an instance of `PointMass`.
 
         Args:
@@ -88,6 +88,7 @@ class Rope(base.Task):
         self._n_geoms = 25
         self._use_dr = use_dr
         self._per_traj = per_traj
+        self._heavy_set_scale = _HEAVY_SET_SCALE if heavy_set else 1
 
         super(Rope, self).__init__(random=random)
 
@@ -106,7 +107,7 @@ class Rope(base.Task):
     def initialize_episode(self, physics):
         if self._use_dr:
             self.dof_damping = np.concatenate([np.zeros((6)), np.ones(2 * (self._n_geoms - 1)) * 0.002], axis=0)
-            self.body_mass = np.concatenate([np.zeros(1), np.ones(self._n_geoms) * 0.00563])
+            self.body_mass = np.concatenate([np.zeros(1), np.ones(self._n_geoms) * 0.00563 * self._heavy_set_scale])
             self.body_inertia = np.concatenate(
                 [np.zeros((1, 3)), np.tile(np.array([[4.58e-07, 4.58e-07, 1.8e-07]]), (self._n_geoms, 1))],
                 axis=0)
@@ -122,6 +123,8 @@ class Rope(base.Task):
             self.light_pos = np.array([0, 0, 1])
 
             self.apply_dr(physics)
+        else:
+            physics.named.model.body_mass[1:] = np.ones(self._n_geoms) * 0.00563 * self._heavy_set_scale
 
         render_kwargs = {}
         render_kwargs['camera_id'] = 0

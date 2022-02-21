@@ -43,6 +43,7 @@ _CLOSE = .01  # (Meters) Distance below which a thing is considered close.
 _CONTROL_TIMESTEP = .02  # (Seconds)
 _TIME_LIMIT = 30  # (Seconds)
 _FIXED_ACTION_DIMS = 6
+_HEAVY_SET_SCALE = 3
 
 CORNER_INDEX_ACTION = ['B0_0', 'B0_8', 'B8_0', 'B8_8']
 CORNER_INDEX_GEOM = ['G0_0', 'G0_8', 'G8_0', 'G8_8']
@@ -76,7 +77,8 @@ class Physics(mujoco.Physics):
 class Cloth(base.Task):
     """A Stack `Task`: stack the boxes."""
 
-    def __init__(self, randomize_gains, random=None, random_pick=True, init_flat=False, use_dr=False, texture_randomization=True, per_traj=False):
+    def __init__(self, randomize_gains, random=None, random_pick=True, init_flat=False, use_dr=False,
+                 heavy_set=False, texture_randomization=True, per_traj=False):
         """Initialize an instance of `PointMass`.
 
         Args:
@@ -91,6 +93,7 @@ class Cloth(base.Task):
         self._use_dr = use_dr
         self._texture_randomization = texture_randomization
         self._per_traj = per_traj
+        self._heavy_set_scale = _HEAVY_SET_SCALE if heavy_set else 1
 
         super(Cloth, self).__init__(random=random)
 
@@ -129,12 +132,14 @@ class Cloth(base.Task):
             self.light_pos = np.array([0, 0, 1])
 
             self.dof_damping = np.concatenate([np.zeros((6)), np.ones((160)) * 0.002], axis=0)
-            self.body_mass = np.concatenate([np.zeros(1), np.ones(81) * 0.00309])
+            self.body_mass = np.concatenate([np.zeros(1), np.ones(81) * 0.00309 * self._heavy_set_scale])
             self.body_inertia = np.concatenate(
                 [np.zeros((1, 3)), np.tile(np.array([[2.32e-07, 2.32e-07, 4.64e-07]]), (81, 1))], axis=0)
             self.geom_friction = np.tile(np.array([[1, 0.005, 0.001]]), (86, 1))
 
             self.apply_dr(physics)
+        else:
+            physics.named.model.body_mass[1:] = np.ones(81) * 0.00309 * self._heavy_set_scale
 
         if not self._init_flat:
             physics.named.data.xfrc_applied[CORNER_INDEX_ACTION, :3] = np.random.uniform(-.3, .3, size=3)
