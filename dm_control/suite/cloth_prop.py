@@ -54,9 +54,9 @@ W = 64
 SUITE = containers.TaggedTasks()
 
 
-def make_model(prop_name):
+def make_model(prop_name, xml_file):
   """Returns a tuple containing the model XML string and a dict of assets."""
-  xml_string = common.read_model('cloth_prop.xml')
+  xml_string = common.read_model(xml_file)
   parser = etree.XMLParser(remove_blank_text=True)
   mjcf = etree.XML(xml_string, parser)
 
@@ -80,9 +80,12 @@ def make_model(prop_name):
 @SUITE.add('hard')
 def hard(time_limit=_TIME_LIMIT, random=None, prop_name=None, coverage_type='full', environment_kwargs=None, **kwargs):
     """Returns cloth with at most one prop."""
+    xml_file = 'cloth_prop.xml'
+    xml_file_cvg = 'cloth_prop_cvg.xml'
+    xml_file_no_cvg = 'cloth_prop_no_cvg.xml'
+    physics = Physics.from_xml_string(*make_model(prop_name or '', xml_file))
 
     task = Cloth(randomize_gains=False, random=random, **kwargs)
-    physics = Physics.from_xml_string(*make_model(prop_name or ''))
 
     # optionally offset prop
     # note: assume cloth/prop in xml are in full coverage configuration by default
@@ -92,10 +95,20 @@ def hard(time_limit=_TIME_LIMIT, random=None, prop_name=None, coverage_type='ful
         object_x_offset = object_x + max(0.3 * np.random.rand(), 0.15)
         object_z_offset = object_z + 0.1 * np.random.rand()
         physics.named.model.body_pos[prop_name, ['x', 'z']] = object_x_offset, object_z_offset
+    if coverage_type == 'partial-II':
+        # move the cloth over instead TODO: apply force
+        object_x = physics.named.data.site_xpos[prop_name, 'x']
+        object_z = physics.named.data.site_xpos[prop_name, 'z']
+        object_x_offset = object_x + max(0.3 * np.random.rand(), -0.35)
+        object_z_offset = object_z + 0.1 * np.random.rand()
+        physics.named.model.body_pos[prop_name, ['x', 'z']] = object_x_offset, object_z_offset
     elif coverage_type == 'none':
+        physics = Physics.from_xml_string(*make_model(prop_name or '', xml_file_no_cvg))
         # place cloth underneath prop
         physics.named.model.body_pos[prop_name, ['z']] = 0.21
         physics.named.model.body_pos[_CLOTH_MODEL_NAME, ['z']] = 0
+    elif coverage_type == 'wrap':
+        physics = Physics.from_xml_string(*make_model(prop_name or '', xml_file_cvg))
     else:
         if coverage_type != 'full':
             assert False, f"unkown coverage type"

@@ -1,0 +1,81 @@
+<mujoco model="cloth block">
+
+  <include file="./common/visual.xml"/>
+  <include file="./common/skybox.xml"/>
+  <include file="./common/materials.xml"/>
+
+  <size njmax="8000" nconmax="4000"/>
+
+  <asset>
+      <texture name="background" builtin="flat" type="2d" mark="random" markrgb="1 1 1" width="800" height="800" rgb1=".2 .3 .4"/>
+      <material name="background" texture="background" texrepeat="1 1" texuniform="true"/>
+      <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="512"/>
+      <texture name="texplane" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 0.15 0.2"
+          width="512" height="512" mark="cross" markrgb=".8 .8 .8"/>
+      <texture name="texgrey" type="2d" file="/home/bilkit/Workspace/dm_control/dm_control/suite/cloth_grey.png"/>
+      <material name="matgrey" texture="texgrey"/>
+      <material name="matplane" reflectance="0.3" texture="texplane" texrepeat="1 1" texuniform="true"/>
+  </asset>
+
+
+  <default>
+    <joint type="hinge" axis="0 0 1" limited="true" range="-.29 .29" damping="1"/>
+    <motor gear=".1" ctrlrange="-10 10" ctrllimited="true"/>
+
+    <default class="object">
+      <geom material="self"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <!-- Arena -->
+    <light name="light" directional="true" diffuse=".6 .6 .6" pos="0 0 1" specular=".3 .3 .3"/>
+    <camera name="fixed" pos="0 0 .5" quat="1 0 0 0"/>
+    <geom name="ground" type="plane" pos="0 0 0" size=".42 .42 .1" rgba="0.18 0.545 0.341 1"/>
+
+    <!-- DO: include mass for reasonable collision behaviour -->
+    <body name="B4_4" pos="0 0 0.1">
+          <camera name="track" mode="trackcom" pos="-0.05 -0.6 .5" quat="1 0 0 0"/>
+      <freejoint name="r1"/>
+      <composite type="cloth" count="9 9 1" spacing="0.03" flatinertia="0.01">
+        <joint kind="main" damping="0.08"/>
+        <skin material="matgrey" texcoord="true" inflate="0.005" subgrid="2"/>
+        <geom type="capsule" size="0.0075 0.005" rgba=".8 .2 .1 1" mass="0.1"/>
+      </composite>
+      <site name="B4_4" type="sphere"/>
+    </body>
+
+    <!-- Props: ensure z is less than that of the DO -->
+    <body name="block" pos=".3 0 .25" childclass="object">
+      <joint name="block_x" type="slide" axis="1 0 0" ref=".5"/>
+      <joint name="block_z" type="slide" axis="0 0 1" ref=".4"/>
+      <joint name="block_y" type="hinge" axis="0 1 0"/>
+      <geom  name="block" type="box" size=".042 .042 .042" mass="10"/>
+      <site  name="block" type="sphere"/>
+    </body>
+
+    <body name="ball" pos=".3 0 .5" childclass="object">
+      <joint name="ball_x" type="slide" axis="1 0 0" ref=".4"/>
+      <joint name="ball_z" type="slide" axis="0 0 1" ref=".4"/>
+      <joint name="ball_y" type="hinge" axis="0 1 0"/>
+      <geom  name="ball" type="sphere" size=".042" mass="10"/>
+      <site  name="ball" type="sphere"/>
+    </body>
+
+    <!-- Boundaries: these don't seem to be necessary for current exps
+    <geom name="wall_x" type="plane" pos="-.42 0 .02" zaxis="1 0 0"  size=".02 .42 .02" rgba="1 1 1 1"/>
+    <geom name="wall_y" type="plane" pos="0 -.42 .02" zaxis="0 1 0"  size=".42 .02 .02" rgba="1 1 1 1 "/>
+    <geom name="wall_neg_x" type="plane" pos=".42 0 .02" zaxis="-1 0 0"  size=".02 .42 .02" rgba="1 1 1 1"/>
+    <geom name="wall_neg_y" type="plane" pos="0 .42 .02" zaxis="0 -1 0"  size=".42 .02 .02" rgba = '1 1 1 1'/>
+     -->
+
+  </worldbody>
+
+  <sensor>
+  </sensor>
+
+  <actuator>
+    <motor ctrllimited="true" ctrlrange="-1 1" gear="5.0" joint="r1"/>
+  </actuator>
+
+</mujoco>
