@@ -171,6 +171,7 @@ class Cloth(base.Task):
 
 
     def initialize_episode(self, physics) -> None:
+        # pin down flat cloth
         physics.named.data.xfrc_applied['B3_4', :3] = np.array([0, 0, -2])
         physics.named.data.xfrc_applied['B4_4', :3] = np.array([0, 0, -2])
 
@@ -191,17 +192,30 @@ class Cloth(base.Task):
             self.light_dir = np.array([0, 0, -1])
             self.light_pos = np.array([0, 0, 1])
 
-            self.dof_damping = np.concatenate([np.zeros((6)), np.ones((160)) * 0.002], axis=0)
-            self.body_mass = np.concatenate([np.zeros(1), np.ones(81) * 0.00309])
-            self.body_inertia = np.concatenate(
-                [np.zeros((1, 3)), np.tile(np.array([[2.32e-07, 2.32e-07, 4.64e-07]]), (81, 1))], axis=0)
-            self.geom_friction = np.tile(np.array([[1, 0.005, 0.001]]), (86, 1))
+            prop_damping = np.ones((3))
+            prop_friction = np.array([[1, 0.005, 0.001]])
+            prop_mass = np.array([10])
+            prop_inertia = np.array([[2.32e-07, 2.32e-07, 4.64e-07]])
+            gnd_damping = np.zeros((6))
+            gnd_friction = np.zeros((1, 3))
+            gnd_mass = np.zeros(1)
+            gnd_inertia = np.zeros((1, 3))
+            cloth_damping = np.ones((160)) * 0.08
+            cloth_mass = np.ones(81) * 0.1
+            # TODO: should increase these bc....?
+            cloth_inertia = np.tile(np.array([[2.32e-07, 2.32e-07, 4.64e-07]]), (81, 1))
+            cloth_friction = np.tile(np.array([[1, 0.005, 0.001]]), (81, 1))
+
+            self.dof_damping = np.concatenate([gnd_damping, cloth_damping, prop_damping], axis=0)
+            self.body_mass = np.concatenate([gnd_mass, cloth_mass, prop_mass])
+            self.body_inertia = np.concatenate([gnd_inertia, cloth_inertia, prop_inertia], axis=0)
+            self.geom_friction = np.concatenate([gnd_friction, cloth_friction, prop_friction], axis=0)
 
             self.apply_dr(physics)
 
         if not self._init_flat:
             physics.after_reset()
-            physics.named.data.xfrc_applied[CORNER_INDEX_ACTION, :3] = np.random.uniform(-.3, .3, size=3)
+            physics.named.data.xfrc_applied[CORNER_INDEX_ACTION, :3] = np.random.uniform(-.5, .5, size=3)
 
         super(Cloth, self).initialize_episode(physics)
 
@@ -258,11 +272,11 @@ class Cloth(base.Task):
 
         # # friction randomization
         geom_friction = self.geom_friction.copy()
-        physics.named.model.geom_friction[5:, 0] = np.random.uniform(-0.5, 0.5) + geom_friction[5:, 0]
+        physics.named.model.geom_friction[1:, 0] = np.random.uniform(-0.5, 0.5) + geom_friction[1:, 0]
         #
-        physics.named.model.geom_friction[5:, 1] = np.random.uniform(-0.002, 0.002) + geom_friction[5:, 1]
+        physics.named.model.geom_friction[1:, 1] = np.random.uniform(-0.002, 0.002) + geom_friction[1:, 1]
         #
-        physics.named.model.geom_friction[5:, 2] = np.random.uniform(-0.0005, 0.0005) + geom_friction[5:, 2]
+        physics.named.model.geom_friction[1:, 2] = np.random.uniform(-0.0005, 0.0005) + geom_friction[1:, 2]
         #
         # # inertia randomization
         body_inertia = self.body_inertia.copy()
