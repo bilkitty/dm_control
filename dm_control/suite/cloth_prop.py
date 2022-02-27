@@ -78,7 +78,7 @@ def make_model(prop_name, xml_file):
   return etree.tostring(mjcf, pretty_print=True), common.ASSETS
 
 @SUITE.add('hard')
-def hard(time_limit=_TIME_LIMIT, random=None, prop_name=None, coverage_type='full', environment_kwargs=None, **kwargs):
+def hard(time_limit=_TIME_LIMIT, random=None, prop_name=None, coverage_type='full', randomise_coverage_type=False, environment_kwargs=None, **kwargs):
     """Returns cloth with at most one prop."""
     xml_file = 'cloth_prop.xml'
     xml_file_cvg = 'cloth_prop_cvg.xml'
@@ -87,31 +87,45 @@ def hard(time_limit=_TIME_LIMIT, random=None, prop_name=None, coverage_type='ful
 
     task = Cloth(randomize_gains=False, random=random, **kwargs)
 
+    if randomise_coverage_type:
+        coverage_type = np.random.choice(['full', 'partial', 'partial-II', 'none', 'wrap'])
+
     # optionally offset prop
     # note: assume cloth/prop in xml are in full coverage configuration by default
-    if coverage_type == 'partial':
+    if coverage_type == 'full':
+        pass
+        #object_x_offset = max(0.1 * np.random.rand(), 0.02)
+        #physics.named.data.xfrc_applied[prop_name, :3] = np.array([object_x_offset, 0, 0])
+        #physics.named.model.body_pos[prop_name, ['x']] = object_x_offset
+        #for ci in np.arange(1, 82):
+        #    #physics.named.data.xfrc_applied[ci, :3] = np.array([5 * object_x_offset, 0, 0])
+        #    physics.named.model.body_pos[ci, ['x']] = object_x_offset
+    elif coverage_type == 'partial':
         object_x = physics.named.data.site_xpos[prop_name, 'x']
         object_z = physics.named.data.site_xpos[prop_name, 'z']
         object_x_offset = object_x + max(0.3 * np.random.rand(), 0.15)
         object_z_offset = object_z + 0.1 * np.random.rand()
         physics.named.model.body_pos[prop_name, ['x', 'z']] = object_x_offset, object_z_offset
-    if coverage_type == 'partial-II':
+    elif coverage_type == 'partial-II':
         # move the cloth over instead TODO: apply force
         object_x = physics.named.data.site_xpos[prop_name, 'x']
         object_z = physics.named.data.site_xpos[prop_name, 'z']
-        object_x_offset = object_x + max(0.3 * np.random.rand(), -0.35)
+        object_x_offset = object_x + min(-0.3 * np.random.rand(), -0.15)
         object_z_offset = object_z + 0.1 * np.random.rand()
         physics.named.model.body_pos[prop_name, ['x', 'z']] = object_x_offset, object_z_offset
     elif coverage_type == 'none':
         physics = Physics.from_xml_string(*make_model(prop_name or '', xml_file_no_cvg))
-        # place cloth underneath prop
-        physics.named.model.body_pos[prop_name, ['z']] = 0.21
-        physics.named.model.body_pos[_CLOTH_MODEL_NAME, ['z']] = 0
     elif coverage_type == 'wrap':
         physics = Physics.from_xml_string(*make_model(prop_name or '', xml_file_cvg))
+        object_x_offset = max(0.3 * np.random.rand(), 0.15)
+        physics.named.model.body_pos[prop_name, ['x']] = object_x_offset
+        #physics.named.model.body_pos['B4_4', ['x']] = object_x_offset
+        #physics.named.model.body_pos['B0_0', ['x', 'z']] = object_x_offset, 1
+        for ci in np.arange(1, 10):
+            physics.named.data.xfrc_applied[ci, :3] = np.array([0.7 * object_x_offset, 0, 1])
+            #physics.named.model.body_pos[ci, ['x']] = object_x_offset
     else:
-        if coverage_type != 'full':
-            assert False, f"unkown coverage type"
+            assert False, f"unkown coverage type {coverage_type}"
 
     environment_kwargs = environment_kwargs or {}
     return control.Environment(
