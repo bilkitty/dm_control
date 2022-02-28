@@ -33,14 +33,14 @@
     <camera name="fixed" pos="0 0 .5" quat="1 0 0 0"/>
     <geom name="ground" type="plane" pos="0 0 0" size=".42 .42 .1" rgba="0.18 0.545 0.341 1"/>
 
-    <!-- DO: include mass for reasonable collision behaviour -->
+    <!-- DO: increase flatinertia and damping for reasonable collision behaviour -->
     <body name="B4_4" pos="0 0 1">
           <camera name="track" mode="trackcom" pos="-0.05 -0.6 .5" quat="1 0 0 0"/>
       <freejoint name="r1"/>
-      <composite type="cloth" count="9 9 1" spacing="0.03" flatinertia="0.01">
-        <joint kind="main" damping="0.08"/>
+      <composite type="cloth" count="9 9 1" spacing="0.03" flatinertia="1.01">
+        <joint kind="main" damping="0.02"/>
         <skin material="matgrey" texcoord="true" inflate="0.005" subgrid="2"/>
-        <geom type="capsule" size="0.0075 0.005" rgba=".8 .2 .1 1" mass="0.1"/>
+        <geom type="capsule" size="0.0075 0.005" rgba=".8 .2 .1 1"/>
       </composite>
       <site name="B4_4" type="sphere"/>
     </body>
