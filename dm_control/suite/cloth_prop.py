@@ -45,8 +45,8 @@ _TIME_LIMIT = 30  # (Seconds)
 _FIXED_ACTION_DIMS = 6
 _ALL_PROPS = frozenset(["block", "ball"])
 _COVERAGE_TYPE = ['none', 'parital', 'full']
-_CLOTH_MODEL_NAME = 'B4_4'
 
+CENTER_INDEX_BODY = 'B4_4'
 CORNER_INDEX_ACTION = ['B0_0', 'B0_8', 'B8_0', 'B8_8']
 CORNER_INDEX_GEOM = ['G0_0', 'G0_8', 'G8_0', 'G8_8']
 
@@ -101,28 +101,27 @@ def hard(time_limit=_TIME_LIMIT, random=None, prop_name=None, coverage_type='ful
         #    #physics.named.data.xfrc_applied[ci, :3] = np.array([5 * object_x_offset, 0, 0])
         #    physics.named.model.body_pos[ci, ['x']] = object_x_offset
     elif coverage_type == 'partial':
-        object_x = physics.named.data.site_xpos[prop_name, 'x']
-        object_z = physics.named.data.site_xpos[prop_name, 'z']
-        object_x_offset = object_x + max(0.3 * np.random.rand(), 0.15)
-        object_z_offset = object_z + 0.1 * np.random.rand()
-        physics.named.model.body_pos[prop_name, ['x', 'z']] = object_x_offset, object_z_offset
+        physics = Physics.from_xml_string(*make_model(prop_name or '', xml_file_cvg))
+        #object_x = physics.named.data.site_xpos[prop_name, 'x']
+        #object_z = physics.named.data.site_xpos[prop_name, 'z']
+        #object_x_offset = object_x + max(0.3 * np.random.rand(), 0.1)
+        #object_z_offset = object_z + 0.1 * np.random.rand()
+        #physics.named.model.body_pos[prop_name, ['x', 'z']] = object_x_offset, object_z_offset
     elif coverage_type == 'partial-II':
-        # move the cloth over instead TODO: apply force
-        object_x = physics.named.data.site_xpos[prop_name, 'x']
-        object_z = physics.named.data.site_xpos[prop_name, 'z']
-        object_x_offset = object_x + min(-0.3 * np.random.rand(), -0.15)
-        object_z_offset = object_z + 0.1 * np.random.rand()
-        physics.named.model.body_pos[prop_name, ['x', 'z']] = object_x_offset, object_z_offset
+        physics = Physics.from_xml_string(*make_model(prop_name or '', xml_file_cvg))
+        physics.named.data.xfrc_applied[CENTER_INDEX_BODY, :3] = np.array([-0.07, 0, 0])
     elif coverage_type == 'none':
         physics = Physics.from_xml_string(*make_model(prop_name or '', xml_file_no_cvg))
     elif coverage_type == 'wrap':
         physics = Physics.from_xml_string(*make_model(prop_name or '', xml_file_cvg))
-        object_x_offset = max(0.3 * np.random.rand(), 0.15)
-        physics.named.model.body_pos[prop_name, ['x']] = object_x_offset
+        physics.named.data.xfrc_applied[CORNER_INDEX_ACTION, :3] = np.array([0.1, 0, 0.05])
+        # TODO: push B4_4 to gnd apply force in -z
+        #object_x_offset = max(0.3 * np.random.rand(), 0.15)
+        #physics.named.model.body_pos[prop_name, ['x']] = object_x_offset
         #physics.named.model.body_pos['B4_4', ['x']] = object_x_offset
         #physics.named.model.body_pos['B0_0', ['x', 'z']] = object_x_offset, 1
-        for ci in np.arange(1, 10):
-            physics.named.data.xfrc_applied[ci, :3] = np.array([0.7 * object_x_offset, 0, 1])
+        #for ci in np.arange(1, 10):
+        #    physics.named.data.xfrc_applied[ci, :3] = np.array([0.7 * object_x_offset, 0, 1])
             #physics.named.model.body_pos[ci, ['x']] = object_x_offset
     else:
             assert False, f"unkown coverage type {coverage_type}"
@@ -201,7 +200,7 @@ class Cloth(base.Task):
             gnd_mass = np.zeros(1)
             gnd_inertia = np.zeros((1, 3))
             cloth_damping = np.ones((160)) * 0.08
-            cloth_mass = np.ones(81) * 0.1
+            cloth_mass = np.ones(81) * 0.00309
             # TODO: should increase these bc....?
             cloth_inertia = np.tile(np.array([[2.32e-07, 2.32e-07, 4.64e-07]]), (81, 1))
             cloth_friction = np.tile(np.array([[1, 0.005, 0.001]]), (81, 1))
@@ -215,7 +214,7 @@ class Cloth(base.Task):
 
         if not self._init_flat:
             physics.after_reset()
-            physics.named.data.xfrc_applied[CORNER_INDEX_ACTION, :3] = np.random.uniform(-.5, .5, size=3)
+            physics.named.data.xfrc_applied[CORNER_INDEX_ACTION, :3] = np.random.uniform(-.1, .1, size=3)
 
         super(Cloth, self).initialize_episode(physics)
 
