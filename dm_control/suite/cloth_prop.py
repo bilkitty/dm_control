@@ -30,6 +30,7 @@ from dm_control.utils import containers
 from dm_control.utils import rewards
 from dm_control.utils import xml_tools
 from dm_control.suite.wrappers.modder import LightModder, MaterialModder, CameraModder
+from dm_control.suite.helpers import *
 
 import os
 from imageio import imsave
@@ -52,7 +53,6 @@ CORNER_INDEX_GEOM = ['G0_0', 'G0_8', 'G8_0', 'G8_8']
 
 W = 64
 SUITE = containers.TaggedTasks()
-
 
 def make_model(prop_name, xml_file):
   """Returns a tuple containing the model XML string and a dict of assets."""
@@ -109,12 +109,14 @@ def hard(time_limit=_TIME_LIMIT, random=None, prop_name=None, coverage_type='ful
         #physics.named.model.body_pos[prop_name, ['x', 'z']] = object_x_offset, object_z_offset
     elif coverage_type == 'partial-II':
         physics = Physics.from_xml_string(*make_model(prop_name or '', xml_file_cvg))
-        physics.named.data.xfrc_applied[CENTER_INDEX_BODY, :3] = np.array([-0.07, 0, 0])
+        physics.named.data.xfrc_applied[CENTER_INDEX_BODY, :3] = np.array([-0.07, 0, 0.6])
     elif coverage_type == 'none':
         physics = Physics.from_xml_string(*make_model(prop_name or '', xml_file_no_cvg))
     elif coverage_type == 'wrap':
         physics = Physics.from_xml_string(*make_model(prop_name or '', xml_file_cvg))
-        physics.named.data.xfrc_applied[CORNER_INDEX_ACTION, :3] = np.array([0.1, 0, 0.05])
+        physics.named.data.xfrc_applied['B3_4', :3] = np.array([0, 0, -2])
+        physics.named.data.xfrc_applied['B4_4', :3] = np.array([0, 0, -2])
+        #physics.named.data.xfrc_applied[CORNER_INDEX_ACTION[:2], :3] = np.array([1, 0, -1])
         # TODO: push B4_4 to gnd apply force in -z
         #object_x_offset = max(0.3 * np.random.rand(), 0.15)
         #physics.named.model.body_pos[prop_name, ['x']] = object_x_offset
@@ -171,8 +173,8 @@ class Cloth(base.Task):
 
     def initialize_episode(self, physics) -> None:
         # pin down flat cloth
-        physics.named.data.xfrc_applied['B3_4', :3] = np.array([0, 0, -2])
-        physics.named.data.xfrc_applied['B4_4', :3] = np.array([0, 0, -2])
+        #physics.named.data.xfrc_applied['B3_4', :3] = np.array([0, 0, -2])
+        #physics.named.data.xfrc_applied['B4_4', :3] = np.array([0, 0, -2])
 
         # initialise frames
         self.capture_color_image(physics)
@@ -303,7 +305,7 @@ class Cloth(base.Task):
         assert action.shape[0] == _FIXED_ACTION_DIMS
         d =_FIXED_ACTION_DIMS // 2
         if not self._random_pick:
-            pick_location = (action[:2] * 0.5 + 0.5) * (W - 1)
+            pick_location = unnormalise(undo_zero_center(action[:2]))
             pick_location = np.round(pick_location).astype('int32')
         else:
             pick_location = self.current_loc
@@ -376,12 +378,13 @@ class Cloth(base.Task):
         self.capture_color_image(physics)
         self.capture_depth_image(physics)
         obs['depth_pixels_mm'] = self._depth_image
-        self.current_loc = self.sample_location(physics) if self._random_pick else np.array([-1, 1])
-        obs['pick_location'] = np.tile(self.current_loc, 50).reshape(-1).astype('float32') / (W - 1)
+        self.current_loc = self.sample_random_location(physics) if self._random_pick else self.sample_location(physics)
+        obs['pick_location'] = normalise(np.tile(self.current_loc, 50).reshape(-1).astype('float32'))
 
-        # generate random action as unif(0,1) * (hi - lo) + lo
-        random_action = np.random.rand(_FIXED_ACTION_DIMS,) * 2 - 1
-        random_action[:2] = self.current_loc.astype('float32') / (W - 1)
+        # generate random action
+        random_action = zero_center(np.random.rand(_FIXED_ACTION_DIMS,))
+        random_action[:2] = zero_center(normalise(self.current_loc.astype('float32')))
+        #random_action[:2] = 2 * (self.current_loc.astype('float32') / (W - 1)) - 1
         random_action[2] = self._depth_image[self.current_loc[0], self.current_loc[1]]
         obs['action_sample'] = random_action
 
@@ -417,6 +420,21 @@ class Cloth(base.Task):
                            for j in range(9)]
                            for i in range(9)], dtype='float32')
         return geoms
+
+    def sample_random_location(self, physics) -> np.ndarray:
+        """Returns a random pixel location(s)."""
+        image = self.capture_color_image(physics)
+        self.image = image
+
+        mask = np.ones_like(image[:,:,0]) > 0 # TODO: simplify no need for this
+        #mask = self.segment_image(image)
+        location_range = np.transpose(np.where(mask))
+        self.location_range = location_range
+        self.num_loc = np.shape(location_range)[0]
+        index = np.random.randint(self.num_loc, size=1)
+        location = location_range[index][0]
+
+        return location
 
     def sample_location(self, physics) -> np.ndarray:
         """ Returns 2d pixel location that is sampled from the LATEST masked image """

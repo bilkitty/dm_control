@@ -30,6 +30,7 @@ from dm_control.utils import containers
 from dm_control.utils import rewards
 from dm_control.utils import xml_tools
 from dm_control.suite.wrappers.modder import LightModder, MaterialModder, CameraModder
+from dm_control.suite.helpers import *
 
 import os
 from imageio import imsave
@@ -228,7 +229,7 @@ class Cloth(base.Task):
         assert action.shape[0] == _FIXED_ACTION_DIMS
         d =_FIXED_ACTION_DIMS // 2
         if not self._random_pick:
-            pick_location = (action[:2] * 0.5 + 0.5) * (W - 1)
+            pick_location = unnormalise(undo_zero_center(action[:2]))
             pick_location = np.round(pick_location).astype('int32')
         else:
             pick_location = self.current_loc
@@ -296,13 +297,19 @@ class Cloth(base.Task):
 
         image = self.get_image(physics)
         self.image = image
-        self.current_loc = self.sample_location(physics) if self._random_pick else np.array([-1, 1])
-        obs['pick_location'] = np.tile(self.current_loc, 50).reshape(-1).astype('float32') / (W - 1)
+        self.current_loc = self.sample_random_location(physics) if self._random_pick else self.sample_location(physics)
+
+        obs['pick_location'] = normalise(np.tile(self.current_loc, 50).reshape(-1).astype('float32'))
 
         # generate random action as unif(0,1) * (hi - lo) + lo
-        random_action = np.random.rand(_FIXED_ACTION_DIMS,) * 2 - 1
-        random_action[:2] = self.current_loc.astype('float32') / (W - 1)
-        random_action[2] = 0.  # todo: would be nice to use depth data
+        # random_action = np.random.rand(_FIXED_ACTION_DIMS,) * 2 - 1
+        # random_action[:2] = self.current_loc.astype('float32') / (W - 1)
+        # random_action[2] = 0.  # todo: would be nice to use depth data
+
+        # generate random action
+        random_action = zero_center(np.random.rand(_FIXED_ACTION_DIMS,))
+        random_action[:2] = zero_center(normalise(self.current_loc.astype('float32')))
+        #random_action[:2] = 2 * (self.current_loc.astype('float32') / (W - 1)) - 1
         obs['action_sample'] = random_action
 
         depth_frame = physics.render(**dict(camera_id=0, width=W, height=W, depth=True))
@@ -329,6 +336,21 @@ class Cloth(base.Task):
                            for j in range(9)]
                            for i in range(9)], dtype='float32')
         return geoms
+
+    def sample_random_location(self, physics) -> np.ndarray:
+        """Returns a random pixel location(s)."""
+        image = self.get_image(physics)
+        self.image = image
+
+        mask = np.ones_like(image[:,:,0]) > 0 # TODO: simplify no need for this
+        #mask = self.segment_image(image)
+        location_range = np.transpose(np.where(mask))
+        self.location_range = location_range
+        self.num_loc = np.shape(location_range)[0]
+        index = np.random.randint(self.num_loc, size=1)
+        location = location_range[index][0]
+
+        return location
 
     def sample_location(self, physics) -> np.ndarray:
         image = self.image

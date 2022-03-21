@@ -28,6 +28,8 @@ from dm_control.suite import common
 from dm_control.suite.utils import randomizers
 from dm_control.utils import containers
 from dm_control.utils import rewards
+from dm_control.suite.helpers import *
+
 import numpy as np
 import random
 import os
@@ -190,7 +192,7 @@ class Rope(base.Task):
         assert action.shape[0] == _FIXED_ACTION_DIMS
         d =_FIXED_ACTION_DIMS // 2
         if not self._random_pick:
-            pick_location = (action[:2] * 0.5 + 0.5) * (W - 1)
+            pick_location = unnormalise(undo_zero_center(action[:2]))
             pick_location = np.round(pick_location).astype('int32')
         else:
             pick_location = self.current_loc
@@ -256,20 +258,8 @@ class Rope(base.Task):
     def get_observation(self, physics):
         """Returns an observation of the state."""
         obs = collections.OrderedDict()
-        if not self._random_pick:
-            pick_location = np.array([-1, 1])
-            image = self.get_image(physics)
-            mask = self.segment_image(image)
-            self.image = image
-
-            if not mask.any():
-                mask = np.eye(image.shape[0])
-
-            # TODO: rm this
-            location_range = np.transpose(np.where(mask))
-            self.location_range = location_range
-            num_loc = np.shape(location_range)[0]
-            self.num_loc = num_loc
+        if self._random_pick:
+            pick_location = self.sample_random_location(physics)
         else:
             pick_location = self.sample_location(physics)
         self.current_loc = pick_location
@@ -277,18 +267,38 @@ class Rope(base.Task):
         if self.current_loc is None:
             pick_location = np.array([-1, -1])
 
-        obs['pick_location'] = np.tile(pick_location, 50).reshape(-1).astype('float32') / (W - 1)
+        obs['pick_location'] = normalise(np.tile(pick_location, 50).reshape(-1).astype('float32'))
 
-        # generate random action as unif(0,1) * (hi - lo) + lo
-        random_action = np.random.rand(_FIXED_ACTION_DIMS,) * 2 - 1
-        random_action[:2] = pick_location.astype('float32') / (W - 1)
-        random_action[2] = 0.  # todo: would be nice to use depth data
+        # generate random action as unif(0,1) and shift to [-1,1]
+        # random_action = np.random.rand(_FIXED_ACTION_DIMS,) * 2 - 1
+        # random_action[:2] = 2 * (pick_location.astype('float32') / (W - 1)) - 1
+        # random_action[2] = 0.  # todo: would be nice to use depth data
+
+        # generate random action
+        random_action = zero_center(np.random.rand(_FIXED_ACTION_DIMS,))
+        random_action[:2] = zero_center(normalise(self.current_loc.astype('float32')))
+        #random_action[:2] = 2 * (self.current_loc.astype('float32') / (W - 1)) - 1
         obs['action_sample'] = random_action
 
         depth_frame = physics.render(**dict(camera_id=0, width=W, height=W, depth=True))
         obs['depth_pixels_mm'] = 1000 * depth_frame.astype('float32')
 
         return obs
+
+    def sample_random_location(self, physics) -> np.ndarray:
+        """Returns a random pixel location(s)."""
+        image = self.get_image(physics)
+        self.image = image
+
+        mask = np.ones_like(image[:,:,0]) > 0 # TODO: simplify no need for this
+        #mask = self.segment_image(image)
+        location_range = np.transpose(np.where(mask))
+        self.location_range = location_range
+        self.num_loc = np.shape(location_range)[0]
+        index = np.random.randint(self.num_loc, size=1)
+        location = location_range[index][0]
+
+        return location
 
     def sample_location(self, physics) -> np.ndarray:
         """Returns a random pixel location(s)."""
