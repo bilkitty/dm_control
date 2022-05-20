@@ -346,7 +346,7 @@ class Cloth(base.Task):
         for i in range(81):
             du = abs(geoms_uv[i][0] - pick_location[0])
             dv = abs(geoms_uv[i][1] - pick_location[1])
-            if du < epsilon and dv < epsilon:
+            if du <= epsilon and dv <= epsilon:
                 possible_index.append(i)
                 possible_z.append(physics.data.geom_xpos[i, 2])
 
@@ -423,10 +423,10 @@ class Cloth(base.Task):
 
     def sample_random_location(self, physics) -> np.ndarray:
         """Returns a random pixel location(s)."""
-        image = self.capture_color_image(physics)
-        self.image = image
+        self.capture_color_image(physics)
+        image = self._color_image
 
-        mask = np.ones_like(image[:,:,0]) > 0 # TODO: simplify no need for this
+        mask = np.ones_like(image[:,:,0]).astype('bool')
         #mask = self.segment_image(image)
         location_range = np.transpose(np.where(mask))
         self.location_range = location_range
@@ -438,6 +438,7 @@ class Cloth(base.Task):
 
     def sample_location(self, physics) -> np.ndarray:
         """ Returns 2d pixel location that is sampled from the LATEST masked image """
+        self.capture_color_image(physics)
         image = self._color_image
         location_range = np.transpose(np.where(self.segment_image(image)))
         num_loc = np.shape(location_range)[0]
@@ -450,6 +451,7 @@ class Cloth(base.Task):
         return pick_location
 
     def get_reward(self, physics) -> float:
+        self.capture_color_image(physics)
         current_mask = self.segment_image(self._color_image).astype(int)
         area = np.sum(current_mask * self.mask)
         reward = area / (np.sum(self.mask) + 1)
